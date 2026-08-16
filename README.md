@@ -1,4 +1,4 @@
-# [yet to think about] — AI Commercial Relationship Agent
+# [Cadence] — AI Commercial Relationship Agent
 
 **Contract-aware payment enforcement for micro-agencies.**
 
