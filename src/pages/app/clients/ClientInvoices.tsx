@@ -8,6 +8,8 @@ import { LoadingState, EmptyState, Breadcrumbs, ErrorState } from '@/components/
 import { Modal } from '@/components/ui/Modal';
 import type { Invoice, Contract } from '@/types';
 import { Upload, Receipt, Loader2, ArrowRight, Edit, Check, AlertTriangle, Clock } from 'lucide-react';
+import * as mammoth from 'mammoth';
+import Tesseract from 'tesseract.js';
 
 export function ClientInvoices() {
   const { clientId } = useParams();
@@ -23,6 +25,7 @@ export function ClientInvoices() {
   const [editMode, setEditMode] = useState(false);
   const [editValues, setEditValues] = useState({ invoice_number: '', amount: '', due_date: '', issue_date: '', description: '' });
   const [error, setError] = useState('');
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!clientId || !organization) return;
@@ -41,6 +44,7 @@ export function ClientInvoices() {
 
   const handleUpload = async (file: File) => {
     if (!clientId || !organization || !file) return;
+    setFileUrl(URL.createObjectURL(file));
     setUploading(true);
     setError('');
     try {
@@ -66,16 +70,25 @@ export function ClientInvoices() {
       await logActivity(organization.id, 'invoice_uploaded', 'Invoice uploaded', `${file.name} uploaded.`, { client_id: clientId, invoice_id: invData.id });
       showToast('Invoice uploaded. Extracting details...', 'success');
 
-      // Extract text from PDF
-      const arrayBuffer = await file.arrayBuffer();
-      const pdfjs = await import('pdfjs-dist');
-      pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
-      const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+      // Extract text from file based on type
       let fullText = '';
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        fullText += textContent.items.map((item: unknown) => (item as { str?: string }).str || '').join(' ') + '\n';
+      if (file.type === 'application/pdf') {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdfjs = await import('pdfjs-dist');
+        const pdfWorker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
+        pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker.default;
+        const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          fullText += textContent.items.map((item: unknown) => (item as { str?: string }).str || '').join(' ') + '\n';
+        }
+      } else if (file.name.endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+        fullText = result.value;
+      } else if (file.type === 'image/png' || file.type === 'image/jpeg' || file.type === 'image/jpg') {
+        const result = await Tesseract.recognize(file, 'eng');
+        fullText = result.data.text;
       }
 
       // Call edge function for extraction
@@ -185,15 +198,29 @@ export function ClientInvoices() {
       <Breadcrumbs items={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Invoices' }]} />
       <h1 className="font-display text-2xl font-semibold text-cadence-text mb-6">Invoices</h1>
 
-      {/* Upload area */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Left Side: Document Preview */}
+        <div>
+          {fileUrl ? (
+            <object data={fileUrl} className="w-full h-[800px] rounded-xl border border-cadence-border" />
+          ) : (
+            <div className="w-full h-[800px] rounded-xl border border-cadence-border bg-cadence-surface flex items-center justify-center text-cadence-muted">
+              No document selected
+            </div>
+          )}
+        </div>
+
+        {/* Right Side: Verification Forms and Upload */}
+        <div>
+          {/* Upload area */}
+          <div className="flex flex-col sm:flex-row gap-3 mb-6">
         <div
           className="flex-1 border-2 border-dashed border-cadence-border rounded-xl p-6 text-center hover:border-cadence-accent transition-colors cursor-pointer"
           onClick={() => fileInputRef.current?.click()}
           onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f && f.type === 'application/pdf') handleUpload(f); }}
+          onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f && (f.type === 'application/pdf' || f.name.endsWith('.docx') || f.type.startsWith('image/'))) handleUpload(f); }}
         >
-          <input ref={fileInputRef} type="file" accept="application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); }} />
+          <input ref={fileInputRef} type="file" accept=".pdf,.docx,.png,.jpg,.jpeg" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); }} />
           {uploading ? (
             <div className="flex items-center justify-center gap-3">
               <Loader2 className="w-5 h-5 text-cadence-accent animate-spin" />
@@ -202,7 +229,7 @@ export function ClientInvoices() {
           ) : (
             <div className="flex items-center justify-center gap-3">
               <Upload className="w-5 h-5 text-cadence-accent" />
-              <span className="text-sm text-cadence-text font-medium">Upload invoice PDF</span>
+              <span className="text-sm text-cadence-text font-medium">Upload invoice (PDF, DOCX, Image)</span>
             </div>
           )}
         </div>
@@ -212,7 +239,7 @@ export function ClientInvoices() {
       {error && <ErrorState message={error} onRetry={() => setError('')} />}
 
       {invoices.length === 0 ? (
-        <EmptyState icon={<Receipt className="w-6 h-6" />} title="No invoices yet" description="Upload an invoice PDF or enter one manually. Cadence will check it against the contract." />
+        <EmptyState icon={<Receipt className="w-6 h-6" />} title="No invoices yet" description="Upload an invoice (PDF, DOCX, Image) or enter one manually. Cadence will check it against the contract." />
       ) : (
         <div className="card divide-y divide-cadence-border">
           {invoices.map((inv) => {
@@ -247,6 +274,8 @@ export function ClientInvoices() {
           })}
         </div>
       )}
+        </div>
+      </div>
 
       {/* Manual entry modal */}
       <Modal open={manualOpen} onClose={() => setManualOpen(false)} title="Enter invoice manually">

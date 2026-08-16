@@ -25,6 +25,7 @@ export function ClientContracts() {
   const [editValue, setEditValue] = useState('');
   const [viewingPage, setViewingPage] = useState<ContractPage | null>(null);
   const [expandedFindings, setExpandedFindings] = useState<Set<string>>(new Set());
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!clientId || !organization) return;
@@ -54,6 +55,7 @@ export function ClientContracts() {
 
   const handleUpload = async (file: File) => {
     if (!clientId || !organization || !file) return;
+    setFileUrl(URL.createObjectURL(file));
     setUploading(true);
     try {
       const fileId = crypto.randomUUID();
@@ -89,34 +91,71 @@ export function ClientContracts() {
       await logActivity(organization!.id, 'contract_processing', 'Contract processing', 'Validating file...', { contract_id: contractId }, {});
       await fetchData();
 
-      const arrayBuffer = await file.arrayBuffer();
-      const pdfjs = await import('pdfjs-dist');
-      pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
-
-      const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
-      const pageCount = pdf.numPages;
-
-      await supabase.from('contracts').update({ page_count: pageCount, processing_stage: 'reading' }).eq('id', contractId);
-
       const pageRecords: Omit<ContractPage, 'id' | 'created_at'>[] = [];
-      for (let i = 1; i <= pageCount; i++) {
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        const text = textContent.items.map((item: unknown) => {
-          const str = (item as { str?: string }).str;
-          return str || '';
-        }).join(' ');
+      let pageCount = 1;
+
+      if (file.type === 'application/pdf' || file.name.match(/\.[pP][dD][fF]$/)) {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdfjs = await import('pdfjs-dist');
+        const pdfWorker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
+        pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker.default;
+  
+        const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+        pageCount = pdf.numPages;
+  
+        await supabase.from('contracts').update({ page_count: pageCount, processing_stage: 'reading' }).eq('id', contractId);
+  
+        for (let i = 1; i <= pageCount; i++) {
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          const text = textContent.items.map((item: unknown) => {
+            const str = (item as { str?: string }).str;
+            return str || '';
+          }).join(' ');
+          const charCount = text.length;
+          const method = charCount > 50 ? 'native' : 'empty';
+          pageRecords.push({
+            contract_id: contractId,
+            page_number: i,
+            extraction_status: charCount > 50 ? 'complete' : 'empty',
+            extraction_method: method,
+            text_content: text,
+            char_count: charCount,
+            error_message: '',
+          });
+        }
+      } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.name.match(/\.docx$/i)) {
+        await supabase.from('contracts').update({ page_count: 1, processing_stage: 'reading' }).eq('id', contractId);
+        const mammoth = await import('mammoth');
+        const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+        const text = result.value;
         const charCount = text.length;
-        const method = charCount > 50 ? 'native' : 'empty';
         pageRecords.push({
           contract_id: contractId,
-          page_number: i,
+          page_number: 1,
           extraction_status: charCount > 50 ? 'complete' : 'empty',
-          extraction_method: method,
+          extraction_method: 'mammoth',
           text_content: text,
           char_count: charCount,
           error_message: '',
         });
+      } else if (file.type.startsWith('image/') || file.name.match(/\.(png|jpe?g)$/i)) {
+        await supabase.from('contracts').update({ page_count: 1, processing_stage: 'reading' }).eq('id', contractId);
+        const Tesseract = (await import('tesseract.js')).default;
+        const result = await Tesseract.recognize(file, 'eng');
+        const text = result.data.text;
+        const charCount = text.length;
+        pageRecords.push({
+          contract_id: contractId,
+          page_number: 1,
+          extraction_status: charCount > 50 ? 'complete' : 'empty',
+          extraction_method: 'tesseract',
+          text_content: text,
+          char_count: charCount,
+          error_message: '',
+        });
+      } else {
+        throw new Error('Unsupported file type');
       }
 
       await supabase.from('contract_pages').insert(pageRecords);
@@ -245,14 +284,40 @@ export function ClientContracts() {
       <Breadcrumbs items={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Contracts' }]} />
       <h1 className="font-display text-2xl font-semibold text-cadence-text mb-6">Contracts</h1>
 
-      {/* Upload area */}
-      <div
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Left Side: Document Preview */}
+        <div>
+          {fileUrl ? (
+            <object data={fileUrl} className="w-full h-[800px] rounded-xl border border-cadence-border" />
+          ) : (
+            <div className="w-full h-[800px] rounded-xl border border-cadence-border bg-cadence-surface flex items-center justify-center text-cadence-muted">
+              No document selected
+            </div>
+          )}
+        </div>
+
+        {/* Right Side: Verification Forms and Upload */}
+        <div>
+          {/* Upload area */}
+          <div
         className="border-2 border-dashed border-cadence-border rounded-xl p-8 text-center mb-6 hover:border-cadence-accent transition-colors cursor-pointer"
         onClick={() => fileInputRef.current?.click()}
         onDragOver={(e) => { e.preventDefault(); }}
-        onDrop={(e) => { e.preventDefault(); const file = e.dataTransfer.files[0]; if (file && file.type === 'application/pdf') handleUpload(file); }}
+        onDrop={(e) => { 
+          e.preventDefault(); 
+          const file = e.dataTransfer.files[0]; 
+          if (file && (['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/png', 'image/jpeg', 'image/jpg'].includes(file.type) || file.name.match(/\.(pdf|docx|png|jpe?g)$/i))) {
+            handleUpload(file);
+          }
+        }}
       >
-        <input ref={fileInputRef} type="file" accept="application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); }} />
+        <input 
+          ref={fileInputRef} 
+          type="file" 
+          accept=".pdf,.docx,.png,.jpg,.jpeg,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg" 
+          className="hidden" 
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); }} 
+        />
         {uploading ? (
           <div className="flex flex-col items-center gap-3">
             <Loader2 className="w-8 h-8 text-cadence-accent animate-spin" />
@@ -263,8 +328,8 @@ export function ClientContracts() {
             <div className="w-12 h-12 rounded-xl bg-cadence-accentSoft flex items-center justify-center">
               <Upload className="w-6 h-6 text-cadence-accent" />
             </div>
-            <p className="text-sm text-cadence-text font-medium">Drop the contract PDF here, or click to browse.</p>
-            <p className="text-xs text-cadence-muted">PDF files only. Multi-page supported.</p>
+            <p className="text-sm text-cadence-text font-medium">Drop the contract file here, or click to browse.</p>
+            <p className="text-xs text-cadence-muted">PDF, DOCX, PNG, JPG. Multi-page supported.</p>
           </div>
         )}
       </div>
@@ -409,6 +474,8 @@ export function ClientContracts() {
           ))}
         </div>
       )}
+        </div>
+      </div>
 
       {/* Edit term modal */}
       <Modal open={!!editingTerm} onClose={() => setEditingTerm(null)} title="Edit term">

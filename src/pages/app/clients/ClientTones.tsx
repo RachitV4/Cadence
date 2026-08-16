@@ -57,9 +57,17 @@ export function ClientTones() {
   };
 
   const sendDraft = async (draft: EmailDraft) => {
-    await supabase.from('email_drafts').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', draft.id);
-    showToast('Email sent successfully', 'success');
-    await fetchData();
+    try {
+      const { error } = await supabase.functions.invoke('dispatch-email', {
+        body: { draftId: draft.id }
+      });
+      if (error) throw error;
+      showToast('Email sent successfully', 'success');
+      await fetchData();
+    } catch (err) {
+      console.error('Failed to dispatch email:', err);
+      showToast('Failed to send email', 'error');
+    }
   };
 
   const saveEdit = async (draft: EmailDraft) => {
