@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
+    "framer-motion": "^13.1.1",
     "git": "^0.1.5",
     "lucide-react": "^0.446.0",
     "mammoth": "^1.12.1",

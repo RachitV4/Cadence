@@ -36,6 +36,7 @@ export function InvoiceDetail() {
   const [editSubject, setEditSubject] = useState('');
   const [editBody, setEditBody] = useState('');
   const [selectedTone, setSelectedTone] = useState<ToneKey>('casual_friendly');
+  const [emailThread, setEmailThread] = useState<any[]>([]);
 
   const fetchData = useCallback(async () => {
     if (!invoiceId || !organization) return;
@@ -56,10 +57,13 @@ export function InvoiceDetail() {
     setPaymentHistory((historyRes.data as PaymentEvent[]) || []);
     setAllInvoices((allInvRes.data as Invoice[]) || []);
 
-    if (inv.contract_id) {
-      const { data: contractData } = await supabase.from('contracts').select('*').eq('id', inv.contract_id).maybeSingle();
-      setContract(contractData as Contract | null);
-      const { data: termsData } = await supabase.from('contract_terms').select('*').eq('contract_id', inv.contract_id);
+    // Aggregate all contracts for the client to build the Knowledge Graph & MSA/SOW Hierarchy
+    const { data: contractData } = await supabase.from('contracts').select('*').eq('client_id', inv.client_id).order('created_at', { ascending: true });
+    if (contractData && contractData.length > 0) {
+      // Treat the oldest contract as the parent MSA, but pass ALL terms to the AI
+      setContract(contractData[0] as Contract);
+      const contractIds = contractData.map(c => c.id);
+      const { data: termsData } = await supabase.from('contract_terms').select('*').in('contract_id', contractIds).order('created_at', { ascending: true });
       setTerms((termsData as ContractTerm[]) || []);
     }
 
@@ -95,6 +99,7 @@ export function InvoiceDetail() {
           invoiceData: { invoice_number: invoice.invoice_number, amount: invoice.amount, due_date: invoice.due_date, issue_date: invoice.issue_date },
           paymentHistory: paymentHistory.map((p) => ({ event_type: p.event_type, days_late: p.days_late, paid_date: p.paid_date })),
           invoiceCount: allInvoices.length,
+          slackWebhookUrl: localStorage.getItem('cadence_slack_webhook'),
         }),
       });
 
@@ -130,7 +135,7 @@ export function InvoiceDetail() {
     }
   };
 
-  const generateDraft = async () => {
+  const generateDraft = async (optionalThread: any[] = []) => {
     if (!invoice || !client || !organization || !analysis) return;
     setDrafting(true);
     setError('');
@@ -158,6 +163,7 @@ export function InvoiceDetail() {
           contractTerms: terms.filter((t) => t.status === 'found').map((t) => ({ key: t.term_key, value: t.edited_value || t.term_value })),
           clientNotes: client.notes,
           isRepeat: client.is_repeat,
+          emailThread: optionalThread.length > 0 ? optionalThread : emailThread,
         }),
       });
 
@@ -214,21 +220,46 @@ export function InvoiceDetail() {
   const handleSend = async () => {
     if (!draft || !organization) return;
     setSending(true);
-    await supabase.from('email_drafts').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', draft.id);
-    await logActivity(organization.id, 'email_sent_demo', 'Email sent (demo mode)', `${draft.subject} sent in demo mode.`, { client_id: client!.id, invoice_id: invoice!.id });
-    if (user) {
-      await supabase.from('notifications').insert({
-        user_id: user.id,
-        organization_id: organization.id,
-        title: 'Email sent in demo mode',
-        body: `${draft.subject}`,
-        type: 'info',
-        link: `/dashboard/invoice/${invoice!.id}`,
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.provider_token) {
+        throw new Error('No Google OAuth provider_token found. Please log in with Google.');
+      }
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-gmail`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session?.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          to: client?.contact_email || 'client@example.com',
+          subject: draft.subject,
+          body: draft.body,
+          providerToken: session?.provider_token
+        }),
       });
+      if (!res.ok) throw new Error('Failed to send');
+      
+      await supabase.from('email_drafts').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', draft.id);
+      await logActivity(organization.id, 'email_sent', 'Email sent via Gmail', `${draft.subject} sent to ${client?.contact_email}.`, { client_id: client!.id, invoice_id: invoice!.id });
+      
+      if (user) {
+        await supabase.from('notifications').insert({
+          user_id: user.id,
+          organization_id: organization.id,
+          title: 'Email sent via Gmail',
+          body: `${draft.subject}`,
+          type: 'success',
+          link: `/dashboard/invoice/${invoice!.id}`,
+        });
+      }
+      showToast('Email sent securely via Gmail!', 'success');
+      await fetchData();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Failed to send email. Check Gmail scopes.', 'error');
+    } finally {
+      setSending(false);
     }
-    showToast('Sent in demo mode. No real email was delivered.', 'info');
-    setSending(false);
-    await fetchData();
   };
 
   const openEditModal = () => {
@@ -325,16 +356,26 @@ export function InvoiceDetail() {
         {/* Cadence's advice */}
         {analysis ? (
           <div className="card p-5 ring-1 ring-cadence-accentLine">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-cadence-accent flex items-center justify-center">
-                <Brain className="w-4 h-4 text-white" />
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-cadence-accent flex items-center justify-center">
+                  <Brain className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-medium text-cadence-text">Cadence's advice</h2>
+                  <span className={`badge ${analysis.risk_level === 'low' ? 'badge-success' : analysis.risk_level === 'medium' ? 'badge-warning' : 'badge-danger'}`}>
+                    {analysis.risk_level === 'low' ? 'Low risk' : analysis.risk_level === 'medium' ? 'Medium risk' : 'High risk'}
+                  </span>
+                </div>
               </div>
-              <div>
-                <h2 className="text-sm font-medium text-cadence-text">Cadence's advice</h2>
-                <span className={`badge ${analysis.risk_level === 'low' ? 'badge-success' : analysis.risk_level === 'medium' ? 'badge-warning' : 'badge-danger'}`}>
-                  {analysis.risk_level === 'low' ? 'Low risk' : analysis.risk_level === 'medium' ? 'Medium risk' : 'High risk'}
-                </span>
-              </div>
+              <button 
+                onClick={generateAdvice} 
+                disabled={analyzing}
+                className="btn-secondary text-xs px-2.5 py-1.5 flex items-center gap-1.5"
+              >
+                {analyzing ? <Loader2 className="w-3 h-3 animate-spin" /> : <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" /><path d="M16 21v-5h5" /></svg>}
+                Regenerate
+              </button>
             </div>
             <p className="text-sm text-cadence-text leading-relaxed mb-4">{analysis.explanation}</p>
 
@@ -416,11 +457,31 @@ export function InvoiceDetail() {
         {/* Email draft */}
         {draft ? (
           <div className="card p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <Mail className="w-4 h-4 text-cadence-accent" />
-              <h2 className="text-sm font-medium text-cadence-text">Drafted email</h2>
-              <span className="text-xs text-cadence-muted">Tone: {TONES.find((t) => t.key === draft.tone)?.name || draft.tone}</span>
-              {draft.status === 'sent' && <span className="badge-success"><Check className="w-3 h-3" /> Sent (demo)</span>}
+            <div className="flex items-center gap-2 mb-3 justify-between">
+              <div className="flex items-center gap-2">
+                <Mail className="w-4 h-4 text-cadence-muted" />
+                <h2 className="text-sm font-medium text-cadence-text">Drafted email</h2>
+                {emailThread.length > 0 && (
+                  <span className="ml-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-[10px] font-bold text-purple-400 uppercase tracking-wider">
+                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM4 10a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2zm16 0a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2z"/><path d="M12 8v12M8 14l4-4 4 4"/></svg>
+                    Multi-Agent Negotiator Active
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <span className="text-xs text-cadence-muted">Tone: {TONES.find((t) => t.key === draft.tone)?.name || draft.tone}</span>
+                {draft.status === 'sent' && <span className="badge-success"><Check className="w-3 h-3" /> Sent</span>}
+              </div>
+              {draft.status !== 'sent' && (
+                <button 
+                  onClick={generateDraft} 
+                  disabled={drafting}
+                  className="btn-secondary text-xs px-2.5 py-1.5 flex items-center gap-1.5"
+                >
+                  {drafting ? <Loader2 className="w-3 h-3 animate-spin" /> : <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" /><path d="M16 21v-5h5" /></svg>}
+                  Regenerate
+                </button>
+              )}
             </div>
             <div className="rounded-lg border border-cadence-border bg-cadence-bg p-4 space-y-3">
               <div>
@@ -440,11 +501,81 @@ export function InvoiceDetail() {
               {draft.status !== 'sent' && (
                 <>
                   <button onClick={openEditModal} className="btn-secondary"><Edit className="w-4 h-4" /> Edit</button>
+                  <button 
+                    onClick={async () => {
+                      try {
+                        const { data: { session } } = await supabase.auth.getSession();
+                        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/schedule-meet`, {
+                          method: 'POST',
+                          headers: {
+                            'Authorization': `Bearer ${session?.access_token}`,
+                            'Content-Type': 'application/json',
+                          },
+                          body: JSON.stringify({
+                            clientEmail: client.contact_email || 'client@example.com',
+                            clientName: client.name,
+                            providerToken: session?.provider_token
+                          }),
+                        });
+                        if (!res.ok) throw new Error('Failed to schedule');
+                        const data = await res.json();
+                        
+                        const meetAppend = `\n\nI've placed a 15-minute hold on my calendar for tomorrow to sync on this. You can join the Google Meet here: ${data.meetLink}`;
+                        const newBody = draft.body + meetAppend;
+                        
+                        await supabase.from('email_drafts').update({ body: newBody }).eq('id', draft.id);
+                        showToast('Google Meet scheduled and added to draft!', 'success');
+                        await fetchData();
+                      } catch (e) {
+                        showToast('Failed to schedule Meet. Check Calendar scopes.', 'error');
+                      }
+                    }} 
+                    className="btn-secondary border-cadence-accent text-cadence-accent hover:bg-cadence-accentSoft"
+                  >
+                    <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24"><path fill="currentColor" d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-1.99.9-1.99 2L3 20a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zM9 14H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2z"/></svg>
+                    Insert Google Meet
+                  </button>
                   <button onClick={handleSend} disabled={sending} className="btn-primary">
                     {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                    {sending ? 'Sending...' : 'Send'}
+                    {sending ? 'Sending...' : 'Send via Gmail'}
                   </button>
                 </>
+              )}
+              {draft.status === 'sent' && (
+                <button 
+                  onClick={async () => {
+                    try {
+                      showToast('Scanning inbox for replies...', 'info');
+                      const { data: { session } } = await supabase.auth.getSession();
+                      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scrape-gmail`, {
+                        method: 'POST',
+                        headers: {
+                          'Authorization': `Bearer ${session?.access_token}`,
+                          'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                          clientEmail: client.contact_email || 'client@example.com',
+                          providerToken: session?.provider_token,
+                          subjectQuery: draft.subject.replace(/re:|fwd:/gi, '').trim()
+                        }),
+                      });
+                      if (!res.ok) throw new Error('Failed to check replies');
+                      const data = await res.json();
+                      if (data.emails && data.emails.length > 1) {
+                        showToast(`Found ${data.emails.length - 1} replies! Auto-drafting response...`, 'success');
+                        setEmailThread(data.emails);
+                        await generateDraft(data.emails);
+                      } else {
+                        showToast('No new replies found yet.', 'info');
+                      }
+                    } catch (e) {
+                      showToast('Failed to check inbox.', 'error');
+                    }
+                  }} 
+                  className="btn-secondary border-[#4285F4] text-[#4285F4] hover:bg-[#4285F4]/10"
+                >
+                  <Mail className="w-4 h-4 mr-2" /> Check for Replies
+                </button>
               )}
             </div>
             {draft.status === 'sent' && (

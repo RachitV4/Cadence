@@ -8,7 +8,7 @@ import { LoadingState, EmptyState, StatusBadge, Breadcrumbs, SeverityBadge, Conf
 import { Modal } from '@/components/ui/Modal';
 import type { Contract, ContractTerm, ContractFinding, ContractPage } from '@/types';
 import { TERM_LABELS } from '@/types';
-import { Upload, FileText, Loader2, Check, Edit, Eye, AlertTriangle, X, ChevronDown } from 'lucide-react';
+import { Upload, FileText, Loader2, Check, Edit, Eye, AlertTriangle, X, ChevronDown, Search } from 'lucide-react';
 
 export function ClientContracts() {
   const { clientId } = useParams();
@@ -26,6 +26,9 @@ export function ClientContracts() {
   const [viewingPage, setViewingPage] = useState<ContractPage | null>(null);
   const [expandedFindings, setExpandedFindings] = useState<Set<string>>(new Set());
   const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResult, setSearchResult] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!clientId || !organization) return;
@@ -277,12 +280,67 @@ export function ClientContracts() {
     });
   };
 
+  const handleSearch = async (contractId: string) => {
+    if (!searchQuery.trim()) return;
+    setIsSearching(true);
+    setSearchResult('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/search-contract`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session?.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ contractId, query: searchQuery }),
+      });
+      if (!res.ok) throw new Error('Search failed');
+      const data = await res.json();
+      setSearchResult(data.answer || 'No answer found.');
+    } catch (err) {
+      showToast('Contract search failed', 'error');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   if (loading) return <LoadingState message="Loading contracts..." />;
 
   return (
     <div>
       <Breadcrumbs items={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Contracts' }]} />
-      <h1 className="font-display text-2xl font-semibold text-cadence-text mb-6">Contracts</h1>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+        <h1 className="font-display text-2xl font-semibold text-cadence-text">Contracts</h1>
+        <button 
+          onClick={async () => {
+            try {
+              showToast('Generating contract in Google Docs...', 'info');
+              const { data: { session } } = await supabase.auth.getSession();
+              const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-doc`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${session?.access_token}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  clientName: client?.name || 'Client',
+                  providerToken: session?.provider_token
+                }),
+              });
+              if (!res.ok) throw new Error('Failed to generate');
+              const data = await res.json();
+              window.open(data.docUrl, '_blank');
+              showToast('Contract generated successfully!', 'success');
+            } catch (e) {
+              showToast('Failed to generate. Please re-login with Google to grant Docs permission.', 'error');
+            }
+          }}
+          className="btn-secondary flex items-center gap-2"
+        >
+          <svg className="w-4 h-4 text-[#4285F4]" viewBox="0 0 24 24"><path fill="currentColor" d="M14 2H6a2 2 0 0 0-2 2v16c0 1.11.89 2 2 2h12c1.11 0 2-.89 2-2V8l-6-6m4 18H6V4h7v5h5v11m-3-8.07V19H9v-5.07c0-1.07 1.06-1.61 1.82-1.07l1.18.83l1.18-.83c.76-.54 1.82 0 1.82 1.07Z"/></svg>
+          Generate new via Docs
+        </button>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Left Side: Document Preview */}
@@ -365,7 +423,7 @@ export function ClientContracts() {
 
               {/* Processing center */}
               {contract.status === 'processing' || contract.status === 'analyzing' ? (
-                <div className="rounded-lg bg-cadence-surface2 p-4 space-y-2">
+                <div className="rounded-lg bg-cadence-surface2 p-4 space-y-2 mb-4">
                   <p className="text-xs font-mono text-cadence-muted mb-2">PROCESSING</p>
                   {[
                     { label: 'Uploaded', done: true },
@@ -381,6 +439,39 @@ export function ClientContracts() {
                   ))}
                 </div>
               ) : null}
+
+              {/* Semantic Search */}
+              {contract.status === 'complete' && (
+                <div className="mt-4 mb-6 bg-cadence-surface2 p-5 rounded-xl border border-cadence-border shadow-sm">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Search className="w-4 h-4 text-cadence-accent" />
+                    <h3 className="text-sm font-semibold text-cadence-text">Semantic Contract Search</h3>
+                  </div>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="e.g. What is our liability cap?" 
+                      className="flex-1 bg-cadence-surface border border-cadence-border text-cadence-text text-sm rounded-lg focus:ring-cadence-accent focus:border-cadence-accent block p-2.5 outline-none"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSearch(contract.id)}
+                    />
+                    <button 
+                      onClick={() => handleSearch(contract.id)}
+                      disabled={isSearching || !searchQuery.trim()}
+                      className="bg-cadence-accent hover:bg-opacity-90 text-white font-medium rounded-lg text-sm px-4 py-2.5 text-center flex items-center justify-center disabled:opacity-50"
+                    >
+                      {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}
+                    </button>
+                  </div>
+                  {searchResult && (
+                    <div className="mt-4 p-4 bg-cadence-surface border border-cadence-border rounded-lg text-sm text-cadence-text animate-fade-in shadow-sm">
+                      <strong className="text-cadence-accent mb-2 block uppercase text-xs tracking-wider">AI Answer</strong>
+                      <p className="leading-relaxed">{searchResult}</p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Terms */}
               {contract.status === 'complete' && terms.length > 0 && (

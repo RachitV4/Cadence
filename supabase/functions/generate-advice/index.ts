@@ -70,7 +70,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json();
-    const { invoiceId, organizationId, contractTerms, clientContext, invoiceData, paymentHistory, invoiceCount } = body;
+    const { invoiceId, organizationId, clientId, contractTerms, clientContext, invoiceData, paymentHistory, invoiceCount, slackWebhookUrl } = body;
 
     if (!invoiceId || !organizationId) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -138,33 +138,42 @@ INVOICE DETAILS:
 - Invoice number: ${invoiceNumber}
 - Amount: $${amount.toLocaleString()}
 - Due date: ${dueDate || 'Not specified'}
-- Days overdue: ${invoiceAge} (${dueStatus})
+- Current status: ${dueStatus === 'due_today' ? 'Due today' : dueStatus === 'overdue' ? `${invoiceAge} days overdue` : 'Not yet due'}
 
-CONTRACT TERMS:
-- Payment terms: ${termsMap.payment_terms || 'Not specified'}
-- Late fee: ${termsMap.late_fee || 'Not specified'}
-- Termination: ${termsMap.termination || 'Not specified'}
+CONTRACT TERMS (Hierarchical Knowledge Graph):
+${Object.entries(termsMap).map(([k, v]) => `- ${k.replace(/_/g, ' ')}: ${v}`).join('\n') || 'None provided'}
+*(Note: If multiple overlapping terms exist, consider the most recently signed SOW to override the MSA budget/timeline, but overarching legal clauses like Late Fees usually come from the MSA).*
 
-CLIENT CONTEXT:
-- Repeat client: ${isRepeat ? 'Yes' : 'No'}
-- Client notes: ${clientNotes || 'None'}
-- Total invoices for this client: ${invoiceCount || 1}
-- Payment history: ${onTimePayments} on-time, ${latePayments} late out of ${pastPayments.length} total payments
+CLIENT PROFILE & MEMORY:
+- ${isRepeat ? 'Repeat client' : 'New client'}
+- Notes: ${clientNotes || 'None'}
+- Total past invoices on time: ${onTimePayments}
+- Total past invoices late: ${latePayments}
 
-Return ONLY a valid JSON object with this exact structure:
+CRITICAL TASK:
+You MUST cross-reference the Invoice Details against the aggregated Contract Terms (MSA + SOWs). 
+1. If the Invoice Amount ($${amount.toLocaleString()}) exceeds the approved Budget across all SOWs, this is a SEVERE VIOLATION. Flag it as High Risk.
+2. If the Invoice Due Date violates the MSA's Payment Terms (e.g., Invoice is Net 14 but MSA allows Net 60), you must flag it as a VIOLATION and adjust the risk accordingly.
+3. Your recommendation MUST explicitly mention these discrepancies if they exist.
+
+Provide your analysis in ONLY the following JSON format:
 {
-  "risk_level": "low|medium|high",
-  "recommendation": "Short recommendation title",
-  "recommended_action": "One of: No action, Friendly nudge, Firm reminder, Follow up, Escalate internally",
-  "recommended_tone": "One of: humble, casual_friendly, formal, strict, modest",
-  "explanation": "2-4 sentences explaining the reasoning, referencing specific contract terms and history",
+  "risk_level": "low" | "medium" | "high",
+  "recommendation": "Brief summary of the situation and whether any terms are violated.",
+  "recommended_action": "Specific action to take (e.g., 'Send an apologetic correction email' or 'Send firm reminder')",
+  "recommended_tone": "casual_friendly" | "firm_professional" | "strict" | "empathetic" | "humble",
+  "explanation": "Detailed 2-3 sentence explanation of WHY you gave this advice, explicitly referencing any contract vs invoice discrepancies.",
   "evidence": [
-    { "source": "Contract|Payment history|Client context|Invoice", "detail": "Specific fact", "reference": "Where this came from" }
+    { "source": "Contract", "detail": "The specific term violated", "reference": "What it should have been" }
   ],
-  "tone_reason": "1-2 sentences explaining why this tone was recommended"
+  "tone_reason": "Why this specific tone is appropriate for this client/situation."
 }
 
-Be specific and reference actual contract terms and payment history in your explanation. Return ONLY the JSON.`;
+Rules:
+- Be objective and financially precise.
+- If we (Cadence/the user) made a mistake by overbilling or demanding payment too early based on the contract, recommend a "humble" or "empathetic" tone and an apologetic action.
+- If the client is late and there are no discrepancies, recommend a tone based on their history.
+- Ensure the JSON is valid. Do not use markdown blocks.`;
 
     let result = {
       risk_level: 'low' as string,
@@ -217,6 +226,22 @@ Be specific and reference actual contract terms and payment history in your expl
           evidence: termsMap.payment_terms ? [{ source: 'Contract', detail: `Payment terms: ${termsMap.payment_terms}`, reference: 'Contract terms' }] : [],
           tone_reason: isRepeat ? 'Repeat client — a warm, conversational check-in is appropriate.' : 'A friendly check-in is appropriate for this situation.',
         };
+      }
+    }
+
+    if (slackWebhookUrl) {
+      try {
+        await fetch(slackWebhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: result.risk_level === 'high' 
+              ? `🚨 *High Risk Invoice Detected!*\n*Invoice:* ${invoiceNumber}\n*Amount:* $${amount.toLocaleString()}\n*Advice:* ${result.recommendation}\n*Action required:* ${result.recommended_action}`
+              : `📊 *Advice Generated*\n*Invoice:* ${invoiceNumber}\n*Risk:* ${result.risk_level}\n*Advice:* ${result.recommendation}`
+          })
+        });
+      } catch (e) {
+        console.error('Failed to ping Slack webhook:', e);
       }
     }
 

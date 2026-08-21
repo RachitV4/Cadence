@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, Link, Outlet } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
 import { LoadingState, Breadcrumbs, EmptyState } from '@/components/ui/Primitives';
 import { formatCurrency, formatDate, getInvoiceDueStatus } from '@/lib/utils';
 import type { Client, Contract, Invoice, ClientTone, ActivityEvent } from '@/types';
@@ -9,6 +10,7 @@ import { FileText, Receipt, MessageSquare, Activity as ActivityIcon, ArrowRight,
 
 export function ClientProfile() {
   const { clientId } = useParams();
+  const { showToast } = useToast();
   const { organization } = useAuth();
   const [client, setClient] = useState<Client | null>(null);
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -58,6 +60,63 @@ export function ClientProfile() {
               <Repeat className="w-3.5 h-3.5" /> {client.is_repeat ? 'Repeat client' : 'New client'}
             </span>
           </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={async () => {
+              try {
+                showToast('Creating Google Drive Vault...', 'info');
+                const { data: { session } } = await supabase.auth.getSession();
+                const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-drive`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${session?.access_token}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    clientId: client.id,
+                    clientName: client.name,
+                    providerToken: session?.provider_token
+                  }),
+                });
+                if (!res.ok) throw new Error('Failed to sync');
+                const data = await res.json();
+                window.open(data.folderUrl, '_blank');
+                showToast('Google Drive folder created!', 'success');
+              } catch (e) {
+                showToast('Failed to create Drive Vault. Please re-login with Google.', 'error');
+              }
+            }}
+            className="btn-secondary"
+          >
+            <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24"><path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 14H7v-2h10v2zm0-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+            Sync to Drive
+          </button>
+          <button 
+            onClick={async () => {
+              try {
+                showToast('Running batch analysis...', 'info');
+                const { data: { session } } = await supabase.auth.getSession();
+                const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/batch-negotiate`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${session?.access_token}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ clientId: client.id, organizationId: organization?.id }),
+                });
+                if (!res.ok) throw new Error('No overdue invoices found for this client.');
+                const data = await res.json();
+                showToast(`Successfully batched ${data.invoicesCount} invoices!`, 'success');
+              } catch (e) {
+                showToast(e instanceof Error ? e.message : 'Batch negotiation failed.', 'error');
+              }
+            }}
+            className="btn-primary bg-gradient-to-r from-cadence-accent to-[#E01E5A] border-0"
+          >
+            <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 14h-2v-2h2zm0-4h-2V7h2z"/></svg>
+            Batch Negotiate
+          </button>
         </div>
       </div>
 

@@ -6,7 +6,7 @@ import { useToast } from '@/contexts/ToastContext';
 import { logActivity } from '@/lib/utils';
 import { LoadingState, Breadcrumbs } from '@/components/ui/Primitives';
 import { TONES, type ToneKey } from '@/types';
-import { Check, MessageSquare, Lightbulb, Copy, Edit2, Send } from 'lucide-react';
+import { Check, MessageSquare, Lightbulb, Copy, Edit2, Send, Loader2, Play } from 'lucide-react';
 import type { Client, ClientTone, EmailDraft } from '@/types';
 
 export function ClientTones() {
@@ -21,6 +21,10 @@ export function ClientTones() {
   
   const [editingDraft, setEditingDraft] = useState<string | null>(null);
   const [editBody, setEditBody] = useState('');
+
+  const [playgroundInput, setPlaygroundInput] = useState('');
+  const [playgroundResult, setPlaygroundResult] = useState<{ risk_analysis: string; suggested_action: string; draft_response: string } | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!clientId || !organization) return;
@@ -77,6 +81,64 @@ export function ClientTones() {
     await fetchData();
   };
 
+  const handlePlaygroundSubmit = async () => {
+    if (!playgroundInput.trim()) return;
+    setIsAnalyzing(true);
+    setPlaygroundResult(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const toneName = TONES.find(t => t.key === selected)?.name || 'professional';
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-draft`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session?.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text: playgroundInput, tone: toneName }),
+      });
+      if (!res.ok) throw new Error('Analysis failed');
+      const data = await res.json();
+      setPlaygroundResult(data);
+    } catch (err) {
+      showToast('Analysis failed', 'error');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const [isScraping, setIsScraping] = useState(false);
+  const handleScrapeEmails = async () => {
+    setIsScraping(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      // Call scrape-gmail edge function
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scrape-gmail`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session?.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          clientEmail: client?.email || 'client@example.com',
+          providerToken: session?.provider_token,
+        }),
+      });
+      if (!res.ok) throw new Error('Scraping failed');
+      const data = await res.json();
+      if (data.emails && data.emails.length > 0) {
+        const emailText = data.emails.map((e: any) => `From: ${e.from}\nDate: ${e.date}\nSubject: ${e.subject}\n\n${e.snippet}`).join('\n\n---\n\n');
+        setPlaygroundInput((prev) => prev + (prev ? '\n\n' : '') + emailText);
+        showToast('Gmail messages imported as context.', 'success');
+      } else {
+        showToast('No relevant emails found.', 'success');
+      }
+    } catch (err) {
+      showToast('Failed to scrape Gmail', 'error');
+    } finally {
+      setIsScraping(false);
+    }
+  };
+
   if (loading) return <LoadingState />;
   if (!client) return <LoadingState />;
 
@@ -121,6 +183,99 @@ export function ClientTones() {
             </div>
           </button>
         ))}
+      </div>
+
+      <div className="mb-10">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Play className="w-5 h-5 text-cadence-accent" />
+            <h2 className="font-display text-xl font-semibold text-cadence-text">Interactive Draft Playground</h2>
+          </div>
+          <button 
+            onClick={handleScrapeEmails}
+            disabled={isScraping}
+            className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-2 border-cadence-border"
+          >
+            {isScraping ? <Loader2 className="w-3 h-3 animate-spin" /> : <svg className="w-3.5 h-3.5 text-cadence-muted" viewBox="0 0 24 24"><path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/></svg>}
+            Import Gmail Context
+          </button>
+        </div>
+        <p className="text-sm text-cadence-secondary mb-4">
+          Test out Cadence's AI. Paste an email or message from {client.name} below to analyze risk and generate a drafted response based on the selected tone.
+        </p>
+        <div className="card p-5">
+          <textarea
+            className="w-full text-sm leading-relaxed p-3 border border-cadence-border rounded-lg mb-3 bg-cadence-surface focus:ring-1 focus:ring-cadence-accent outline-none text-cadence-text resize-none"
+            rows={4}
+            placeholder="e.g. We're still waiting on the budget approval for the final milestone..."
+            value={playgroundInput}
+            onChange={(e) => setPlaygroundInput(e.target.value)}
+          />
+          <button
+            onClick={handlePlaygroundSubmit}
+            disabled={isAnalyzing || !playgroundInput.trim()}
+            className="w-full bg-cadence-accent hover:bg-opacity-90 text-white font-medium rounded-lg text-sm px-4 py-2.5 text-center flex items-center justify-center disabled:opacity-50"
+          >
+            {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Analyze & Draft'}
+          </button>
+
+          {playgroundResult && (
+            <div className="mt-6 space-y-4 animate-fade-in border-t border-cadence-border pt-6">
+              <div>
+                <h4 className="text-xs font-mono uppercase tracking-wider text-cadence-danger mb-2">Risk Analysis</h4>
+                <div className="p-3 bg-cadence-dangerSoft rounded-lg border border-cadence-danger/20 text-sm text-cadence-text">
+                  {playgroundResult.risk_analysis}
+                </div>
+              </div>
+              <div>
+                <h4 className="text-xs font-mono uppercase tracking-wider text-cadence-success mb-2">Suggested Action</h4>
+                <div className="p-3 bg-cadence-successSoft rounded-lg border border-cadence-success/20 text-sm text-cadence-text">
+                  {playgroundResult.suggested_action}
+                </div>
+              </div>
+              <div>
+                <h4 className="text-xs font-mono uppercase tracking-wider text-cadence-accent mb-2">Drafted Response ({TONES.find(t => t.key === selected)?.name})</h4>
+                <div className="p-4 bg-cadence-surface2 rounded-lg border border-cadence-border text-sm text-cadence-text whitespace-pre-wrap relative group mb-3">
+                  {playgroundResult.draft_response}
+                  <button 
+                    onClick={() => copyToClipboard(playgroundResult.draft_response)}
+                    className="absolute top-2 right-2 p-1.5 bg-cadence-surface border border-cadence-border rounded text-cadence-muted hover:text-cadence-text opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Copy to clipboard"
+                  >
+                    <Copy className="w-3 h-3" />
+                  </button>
+                </div>
+                <button 
+                  onClick={async () => {
+                    try {
+                      const { data: { session } } = await supabase.auth.getSession();
+                      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-gmail`, {
+                        method: 'POST',
+                        headers: {
+                          'Authorization': `Bearer ${session?.access_token}`,
+                          'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                          to: client?.email || 'client@example.com',
+                          subject: 'Following up',
+                          body: playgroundResult.draft_response,
+                          providerToken: session?.provider_token
+                        }),
+                      });
+                      if (!res.ok) throw new Error('Failed to send');
+                      showToast('Email sent securely via Gmail!', 'success');
+                    } catch (e) {
+                      showToast('Failed to send email. Check Gmail scopes.', 'error');
+                    }
+                  }} 
+                  className="bg-cadence-accent text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-opacity-90 w-full justify-center"
+                >
+                  <Send className="w-4 h-4" /> Send directly via Gmail
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       <div>

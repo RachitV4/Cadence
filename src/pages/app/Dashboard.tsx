@@ -1,15 +1,17 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
 import { supabase } from '@/lib/supabase';
 import { formatRelativeTime, getInvoiceDueStatus, formatCurrency, formatDate } from '@/lib/utils';
 import { EmptyState, LoadingState, StatusBadge } from '@/components/ui/Primitives';
 import type { Client, Invoice, Contract, ActivityEvent, EmailDraft, ContractFinding } from '@/types';
-import { UserPlus, FileText, Receipt, Lightbulb, ArrowRight, Clock, AlertTriangle, CheckCircle2, TrendingUp, ShieldAlert, AlertCircle, FileWarning } from 'lucide-react';
+import { UserPlus, FileText, Receipt, Lightbulb, ArrowRight, Clock, AlertTriangle, CheckCircle2, TrendingUp, ShieldAlert, AlertCircle, FileWarning, Activity, Globe } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 export function Dashboard() {
   const { profile, organization } = useAuth();
+  const { showToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [clients, setClients] = useState<Client[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -22,7 +24,7 @@ export function Dashboard() {
     if (!organization) return;
     const [clientsRes, invoicesRes, contractsRes, activitiesRes, draftsRes, findingsRes] = await Promise.all([
       supabase.from('clients').select('*').eq('organization_id', organization.id).order('created_at', { ascending: false }),
-      supabase.from('invoices').select('*, client:clients(name)').eq('organization_id', organization.id).order('created_at', { ascending: false }),
+      supabase.from('invoices').select('*, client:clients(name), invoice_analysis(*)').eq('organization_id', organization.id).order('created_at', { ascending: false }),
       supabase.from('contracts').select('*, client:clients(name)').eq('organization_id', organization.id).order('created_at', { ascending: false }).limit(5),
       supabase.from('activity_events').select('*').eq('organization_id', organization.id).order('created_at', { ascending: false }).limit(10),
       supabase.from('email_drafts').select('*, invoice:invoices(invoice_number, client:clients(name))').eq('organization_id', organization.id).eq('status', 'draft').order('created_at', { ascending: false }).limit(5),
@@ -69,6 +71,53 @@ export function Dashboard() {
     ];
   }, [invoices]);
 
+  const riskChartData = useMemo(() => {
+    let high = 0;
+    let medium = 0;
+    let low = 0;
+
+    invoices.forEach(inv => {
+      if (inv.payment_status !== 'paid') {
+        const analysisList = inv.invoice_analysis as any[];
+        const analysis = analysisList && analysisList.length > 0 ? analysisList[0] : null;
+        if (analysis?.risk_level === 'high') high += inv.amount;
+        else if (analysis?.risk_level === 'medium') medium += inv.amount;
+        else low += inv.amount;
+      }
+    });
+
+    return [
+      { name: 'High Risk', amount: high, color: '#e11d48' },
+      { name: 'Medium Risk', amount: medium, color: '#f59e0b' },
+      { name: 'Low Risk', amount: low, color: '#10b981' }
+    ];
+  }, [invoices]);
+
+  const clientRisks = useMemo(() => {
+    return clients.map(client => {
+      const clientInvoices = invoices.filter(inv => inv.client_id === client.id);
+      let totalDelay = 0;
+      let counted = 0;
+      
+      clientInvoices.forEach(inv => {
+        if (inv.due_date) {
+          const due = new Date(inv.due_date).getTime();
+          const end = inv.payment_status === 'paid' && inv.paid_date 
+            ? new Date(inv.paid_date).getTime() 
+            : new Date().getTime();
+          
+          if (end > due) {
+            totalDelay += (end - due) / (1000 * 3600 * 24);
+          }
+          counted++;
+        }
+      });
+      
+      const avgDelay = counted > 0 ? Math.round(totalDelay / counted) : 0;
+      return { client, avgDelay };
+    }).sort((a, b) => b.avgDelay - a.avgDelay);
+  }, [clients, invoices]);
+
   if (loading) return <LoadingState message="Loading your dashboard..." />;
 
   const firstName = profile?.full_name?.split(' ')[0] || 'there';
@@ -84,6 +133,14 @@ export function Dashboard() {
     return status === 'due_today';
   });
 
+  const chamberInsights = [
+    { industry: 'Tech / SaaS', avgDelay: 12 },
+    { industry: 'Healthcare', avgDelay: 28 },
+    { industry: 'Marketing / Agency', avgDelay: 5 },
+    { industry: 'Retail / E-commerce', avgDelay: 15 },
+    { industry: 'Real Estate', avgDelay: 21 },
+  ];
+
   const completedSteps = [
     { label: 'Create client', done: clients.length > 0 },
     { label: 'Upload contract', done: contracts.length > 0 },
@@ -94,10 +151,83 @@ export function Dashboard() {
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
       {/* Header */}
-      <div className="mb-8 flex items-center justify-between">
+      <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="font-display text-3xl font-bold text-cadence-text tracking-tight">Command Center</h1>
           <p className="text-base text-cadence-secondary mt-1">Welcome back, {firstName}. Here's the latest on your receivables.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={async () => {
+              try {
+                showToast('Syncing to Google Sheets...', 'info');
+                const { data: { session } } = await supabase.auth.getSession();
+                const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-sheets`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${session?.access_token}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    organizationId: organization?.id,
+                    providerToken: session?.provider_token
+                  }),
+                });
+                if (!res.ok) throw new Error('Failed to sync');
+                const data = await res.json();
+                window.open(data.spreadsheetUrl, '_blank');
+                showToast('Successfully synced to Google Sheets!', 'success');
+              } catch (e) {
+                showToast('Failed to sync. Please re-login with Google to grant Sheets permission.', 'error');
+              }
+            }}
+            className="btn-secondary flex items-center gap-2"
+          >
+            <svg className="w-4 h-4 text-[#0F9D58]" viewBox="0 0 24 24"><path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 14H7v-2h10v2zm0-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+            Sync to Sheets
+          </button>
+          <button 
+            onClick={async () => {
+              const url = prompt('Enter your Slack Webhook URL to enable High Risk notifications:', localStorage.getItem('cadence_slack_webhook') || '');
+              if (url !== null) {
+                localStorage.setItem('cadence_slack_webhook', url);
+                showToast('Slack notifications enabled locally!', 'success');
+              }
+            }}
+            className="btn-secondary flex items-center gap-2 text-[#E01E5A] border-[#E01E5A] hover:bg-[#E01E5A]/10"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24"><path fill="currentColor" d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM9.013 5.042a2.528 2.528 0 0 1 2.522-2.52A2.528 2.528 0 0 1 14.056 5.042a2.527 2.527 0 0 1-2.521 2.52H9.013v-2.52zM9.013 6.313a2.527 2.527 0 0 1 2.522 2.521 2.527 2.527 0 0 1-2.522 2.521H2.7A2.528 2.528 0 0 1 .18 8.834A2.528 2.528 0 0 1 2.7 6.313h6.313zM18.958 8.835a2.528 2.528 0 0 1 2.52-2.523A2.528 2.528 0 0 1 24 8.835a2.527 2.527 0 0 1-2.522 2.52h-2.52v-2.52zM17.687 8.835a2.527 2.527 0 0 1-2.521 2.52 2.527 2.527 0 0 1-2.521-2.52V2.522A2.528 2.528 0 0 1 15.166 0a2.528 2.528 0 0 1 2.521 2.522v6.313zM14.987 18.958a2.528 2.528 0 0 1-2.522 2.52A2.528 2.528 0 0 1 9.944 18.958a2.527 2.527 0 0 1 2.521-2.52h2.522v2.52zM14.987 17.687a2.527 2.527 0 0 1-2.522-2.521 2.527 2.527 0 0 1 2.522-2.521H21.3a2.528 2.528 0 0 1 2.52 2.521 2.528 2.528 0 0 1-2.52 2.521h-6.313z"/></svg>
+            Slack
+          </button>
+          <button 
+            onClick={async () => {
+              try {
+                showToast('Running Autopilot Scan...', 'info');
+                const { data: { session } } = await supabase.auth.getSession();
+                const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/daily-scan`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${session?.access_token}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ 
+                    organizationId: organization?.id,
+                    slackWebhookUrl: localStorage.getItem('cadence_slack_webhook')
+                  }),
+                });
+                if (!res.ok) throw new Error('Scan failed');
+                const data = await res.json();
+                showToast(data.draftsCreated > 0 ? `Autopilot generated ${data.draftsCreated} drafts!` : 'Scan complete. No action needed.', 'success');
+                await fetchData();
+              } catch (e) {
+                showToast('Autopilot scan failed.', 'error');
+              }
+            }}
+            className="btn-primary flex items-center gap-2 bg-gradient-to-r from-cadence-accent to-purple-500 border-0"
+          >
+            <svg className="w-4 h-4 text-white" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 14h-2v-2h2zm0-4h-2V7h2z"/></svg>
+            Run Autopilot
+          </button>
         </div>
       </div>
 
@@ -132,38 +262,50 @@ export function Dashboard() {
           {/* Main Content Column */}
           <div className="lg:col-span-8 space-y-8">
             
-            {/* Cash Flow Visualizer */}
-            <section className="card p-6 bg-gradient-to-br from-cadence-surface to-cadence-surface2 border-cadence-border/60 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-2 mb-6">
-                <TrendingUp className="w-5 h-5 text-cadence-accent" />
-                <h2 className="font-display text-lg font-bold text-cadence-text">Invoices by Status</h2>
-              </div>
-              <div className="h-[280px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#3f3f46" opacity={0.2} />
-                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#71717a', fontSize: 12 }} dy={10} />
-                    <YAxis 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tick={{ fill: '#71717a', fontSize: 12 }}
-                      tickFormatter={(value) => `$${value.toLocaleString()}`}
-                      dx={-10}
-                    />
-                    <Tooltip 
-                      cursor={{ fill: 'transparent' }}
-                      contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
-                      formatter={(value: number) => [formatCurrency(value), 'Amount']}
-                    />
-                    <Bar dataKey="amount" radius={[6, 6, 0, 0]} maxBarSize={60}>
-                      {chartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </section>
+            {/* Charts Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Cash Flow Visualizer */}
+              <section className="card p-6 bg-gradient-to-br from-cadence-surface to-cadence-surface2 border-cadence-border/60 shadow-sm">
+                <div className="flex items-center gap-2 mb-6">
+                  <TrendingUp className="w-5 h-5 text-cadence-accent" />
+                  <h2 className="font-display text-lg font-bold text-cadence-text">Invoices by Status</h2>
+                </div>
+                <div className="h-[220px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#3f3f46" opacity={0.2} />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#71717a', fontSize: 12 }} dy={10} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fill: '#71717a', fontSize: 12 }} tickFormatter={(value) => `$${(value/1000)}k`} dx={-10} />
+                      <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }} formatter={(value: number) => [formatCurrency(value), 'Amount']} />
+                      <Bar dataKey="amount" radius={[6, 6, 0, 0]} maxBarSize={40}>
+                        {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </section>
+
+              {/* Financial Pulse (Risk Level) */}
+              <section className="card p-6 bg-gradient-to-br from-cadence-surface to-cadence-surface2 border-cadence-border/60 shadow-sm">
+                <div className="flex items-center gap-2 mb-6">
+                  <Activity className="w-5 h-5 text-[#f59e0b]" />
+                  <h2 className="font-display text-lg font-bold text-cadence-text">Total Cash at Risk</h2>
+                </div>
+                <div className="h-[220px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={riskChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#3f3f46" opacity={0.2} />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#71717a', fontSize: 12 }} dy={10} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fill: '#71717a', fontSize: 12 }} tickFormatter={(value) => `$${(value/1000)}k`} dx={-10} />
+                      <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }} formatter={(value: number) => [formatCurrency(value), 'Amount']} />
+                      <Bar dataKey="amount" radius={[6, 6, 0, 0]} maxBarSize={40}>
+                        {riskChartData.map((entry, index) => <Cell key={`risk-cell-${index}`} fill={entry.color} />)}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </section>
+            </div>
 
             {/* Smart Alerts / Risk Dashboard */}
             <section>
@@ -232,6 +374,39 @@ export function Dashboard() {
                     </Link>
                   );
                 })}
+              </div>
+            </section>
+
+            {/* Client Payment Reliability Heatmap */}
+            <section className="card p-6 bg-gradient-to-br from-cadence-surface to-cadence-surface2 border-cadence-border/60 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center gap-2 mb-6">
+                <Activity className="w-5 h-5 text-cadence-accent" />
+                <h2 className="font-display text-lg font-bold text-cadence-text">Client Risk Heatmap</h2>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                {clientRisks.map(({ client, avgDelay }) => {
+                  let bgColor = 'bg-cadence-successSoft/30 border-cadence-success/20 text-cadence-success';
+                  if (avgDelay > 14) {
+                    bgColor = 'bg-cadence-dangerSoft/30 border-cadence-danger/20 text-cadence-danger';
+                  } else if (avgDelay > 5) {
+                    bgColor = 'bg-cadence-warningSoft/30 border-cadence-warning/20 text-cadence-warning';
+                  }
+                  
+                  return (
+                    <div key={client.id} className={`p-4 rounded-xl border ${bgColor} flex flex-col justify-between transition-all hover:scale-[1.02]`}>
+                      <span className="font-semibold text-sm truncate mb-2">{client.name}</span>
+                      <div className="flex items-end justify-between">
+                        <span className="text-2xl font-bold font-mono">{avgDelay}</span>
+                        <span className="text-[10px] uppercase tracking-wider opacity-80 mb-1 font-bold">Days Late</span>
+                      </div>
+                    </div>
+                  );
+                })}
+                {clientRisks.length === 0 && (
+                   <div className="col-span-full text-center py-6 text-cadence-muted text-sm border border-dashed border-cadence-border rounded-xl">
+                     No clients available to score.
+                   </div>
+                )}
               </div>
             </section>
           </div>
@@ -323,6 +498,26 @@ export function Dashboard() {
                 </div>
               </section>
             )}
+
+            {/* Chamber of Commerce Insights */}
+            <section>
+
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-display text-sm font-semibold text-cadence-text uppercase tracking-wider text-cadence-muted">Industry Insights</h3>
+                <Globe className="w-4 h-4 text-cadence-muted" />
+              </div>
+              <div className="card p-4 space-y-4">
+                <p className="text-xs text-cadence-muted mb-2">Chamber of Commerce avg. payment delays by sector</p>
+                {chamberInsights.map((insight, idx) => (
+                  <div key={idx} className="flex items-center justify-between border-b border-cadence-border/50 last:border-0 pb-2 last:pb-0">
+                    <span className="text-sm text-cadence-text font-medium">{insight.industry}</span>
+                    <span className="text-xs font-mono px-2 py-1 rounded bg-cadence-surface2 text-cadence-muted">
+                      {insight.avgDelay}d late
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
 
             {/* Recent activity */}
             <section>

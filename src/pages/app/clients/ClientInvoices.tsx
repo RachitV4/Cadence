@@ -6,7 +6,7 @@ import { useToast } from '@/contexts/ToastContext';
 import { logActivity, formatCurrency, formatDate, getInvoiceDueStatus } from '@/lib/utils';
 import { LoadingState, EmptyState, Breadcrumbs, ErrorState } from '@/components/ui/Primitives';
 import { Modal } from '@/components/ui/Modal';
-import type { Invoice, Contract } from '@/types';
+import type { Invoice, Contract, ContractTerm } from '@/types';
 import { Upload, Receipt, Loader2, ArrowRight, Edit, Check, AlertTriangle, Clock } from 'lucide-react';
 import * as mammoth from 'mammoth';
 import Tesseract from 'tesseract.js';
@@ -26,6 +26,9 @@ export function ClientInvoices() {
   const [editValues, setEditValues] = useState({ invoice_number: '', amount: '', due_date: '', issue_date: '', description: '' });
   const [error, setError] = useState('');
   const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [contractTerms, setContractTerms] = useState<ContractTerm[]>([]);
+  const [draftingDispute, setDraftingDispute] = useState<string | null>(null);
+  const [disputeEmail, setDisputeEmail] = useState<{ subject: string, body: string } | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!clientId || !organization) return;
@@ -33,8 +36,15 @@ export function ClientInvoices() {
       supabase.from('invoices').select('*').eq('client_id', clientId).order('created_at', { ascending: false }),
       supabase.from('contracts').select('*').eq('client_id', clientId).eq('status', 'complete'),
     ]);
+    const contractsData = (contractRes.data as Contract[]) || [];
     setInvoices((invRes.data as Invoice[]) || []);
-    setContracts((contractRes.data as Contract[]) || []);
+    setContracts(contractsData);
+    
+    if (contractsData.length > 0) {
+      const { data: terms } = await supabase.from('contract_terms').select('*').in('contract_id', contractsData.map(c => c.id));
+      setContractTerms((terms as ContractTerm[]) || []);
+    }
+    
     setLoading(false);
   }, [clientId, organization]);
 
@@ -191,6 +201,71 @@ export function ClientInvoices() {
     });
   };
 
+  const getDiscrepancies = (inv: Invoice) => {
+    const issues: string[] = [];
+    if (!inv.contract_id) return issues;
+    const terms = contractTerms.filter(t => t.contract_id === inv.contract_id);
+    const valueTerm = terms.find(t => t.term_key === 'contract_value');
+    const paymentTerm = terms.find(t => t.term_key === 'payment_terms');
+    
+    if (valueTerm && valueTerm.term_value) {
+      const match = valueTerm.term_value.match(/[\d,]+(\.\d+)?/);
+      if (match) {
+        const valueNum = parseFloat(match[0].replace(/,/g, ''));
+        if (valueNum && Math.abs(inv.amount - valueNum) > 0.01) {
+          issues.push(`Amount ($${inv.amount}) differs from contract value (${valueTerm.term_value})`);
+        }
+      }
+    }
+    
+    if (paymentTerm && paymentTerm.term_value && inv.issue_date && inv.due_date) {
+      const match = paymentTerm.term_value.match(/Net (\d+)/i) || paymentTerm.term_value.match(/(\d+) days/i);
+      if (match) {
+        const daysAllowed = parseInt(match[1]);
+        const issue = new Date(inv.issue_date);
+        const due = new Date(inv.due_date);
+        const diffDays = Math.round((due.getTime() - issue.getTime()) / (1000 * 3600 * 24));
+        if (diffDays < daysAllowed) {
+          issues.push(`Due in ${diffDays} days, but contract says ${paymentTerm.term_value}`);
+        }
+      }
+    }
+    return issues;
+  };
+
+  const handleDraftDispute = async (inv: Invoice, discrepancies: string[]) => {
+    setDraftingDispute(inv.id);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-email`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          invoiceId: inv.id,
+          organizationId: organization?.id,
+          tone: 'strict',
+          clientName: 'Client',
+          invoiceNumber: inv.invoice_number,
+          amount: inv.amount,
+          dueDate: inv.due_date,
+          advice: 'Draft an email pointing out the invoice discrepancy: ' + discrepancies.join(', '),
+          explanation: 'The invoice violates the contract terms.',
+          contractTerms: contractTerms.filter(t => t.contract_id === inv.contract_id).map(t => ({ key: t.term_key, value: t.term_value })),
+          isRepeat: false,
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to generate email');
+      const data = await response.json();
+      setDisputeEmail(data);
+    } catch (err) {
+      showToast('Failed to draft dispute', 'error');
+    }
+    setDraftingDispute(null);
+  };
+
   if (loading) return <LoadingState message="Loading invoices..." />;
 
   return (
@@ -244,6 +319,7 @@ export function ClientInvoices() {
         <div className="card divide-y divide-cadence-border">
           {invoices.map((inv) => {
             const status = getInvoiceDueStatus(inv.due_date, inv.payment_status);
+            const discrepancies = getDiscrepancies(inv);
             return (
               <div key={inv.id} className="px-4 py-3 flex items-center gap-4">
                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
@@ -254,8 +330,23 @@ export function ClientInvoices() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-cadence-text">{inv.invoice_number || 'Untitled invoice'}</p>
                   <p className="text-xs text-cadence-muted">{formatCurrency(inv.amount)} · Due {formatDate(inv.due_date)}</p>
+                  {discrepancies.length > 0 && (
+                    <div className="mt-1 flex items-start gap-1.5 text-cadence-danger">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span className="text-xs font-semibold leading-tight">Discrepancy: {discrepancies.join('; ')}</span>
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
+                  {discrepancies.length > 0 && (
+                    <button
+                      onClick={() => handleDraftDispute(inv, discrepancies)}
+                      disabled={draftingDispute === inv.id}
+                      className="btn-secondary text-xs px-2.5 py-1.5 border-cadence-danger text-cadence-danger hover:bg-cadence-dangerSoft"
+                    >
+                      {draftingDispute === inv.id ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Draft Dispute'}
+                    </button>
+                  )}
                   {!inv.confirmed && inv.extraction_status === 'complete' && (
                     <button onClick={() => openConfirm(inv)} className="btn-secondary text-xs px-2.5 py-1.5">Confirm</button>
                   )}
@@ -313,6 +404,53 @@ export function ClientInvoices() {
                   <button onClick={confirmInvoiceData} className="btn-primary"><Check className="w-4 h-4" /> Confirm invoice</button>
                 </>
               )}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Dispute Email Modal */}
+      <Modal open={!!disputeEmail} onClose={() => setDisputeEmail(null)} title="Dispute Email Draft">
+        {disputeEmail && (
+          <div className="space-y-4">
+            <div>
+              <label className="label">Subject</label>
+              <input className="input" value={disputeEmail.subject} readOnly />
+            </div>
+            <div>
+              <label className="label">Message</label>
+              <textarea className="input min-h-[200px]" value={disputeEmail.body} readOnly />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setDisputeEmail(null)} className="btn-secondary">Close</button>
+              <button 
+                onClick={async () => {
+                  try {
+                    const { data: { session } } = await supabase.auth.getSession();
+                    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-gmail`, {
+                      method: 'POST',
+                      headers: {
+                        'Authorization': `Bearer ${session?.access_token}`,
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                        to: 'client@example.com',
+                        subject: disputeEmail.subject,
+                        body: disputeEmail.body,
+                        providerToken: session?.provider_token
+                      }),
+                    });
+                    if (!res.ok) throw new Error('Failed to send');
+                    showToast('Email sent securely via Gmail!', 'success');
+                    setDisputeEmail(null);
+                  } catch (e) {
+                    showToast('Failed to send email. Check Gmail scopes.', 'error');
+                  }
+                }} 
+                className="bg-cadence-accent text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-opacity-90"
+              >
+                Send via Gmail
+              </button>
             </div>
           </div>
         )}

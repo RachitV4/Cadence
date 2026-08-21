@@ -71,8 +71,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const body = await req.json();
-    const { invoiceId, organizationId, tone, clientName, invoiceNumber, amount, dueDate, advice, explanation, contractTerms, clientNotes, isRepeat } = body;
+    const { invoiceId, organizationId, clientId, tone, clientName, amount, dueDate, invoiceNumber, advice, explanation, contractTerms, clientNotes, isRepeat, emailThread } = await req.json();
 
     if (!invoiceId || !organizationId) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -127,33 +126,29 @@ Deno.serve(async (req: Request) => {
 
     const toneDesc = TONE_DESCRIPTIONS[toneKey] || TONE_DESCRIPTIONS.casual_friendly;
 
-    const prompt = `Write a payment follow-up email with the following context:
+    const prompt = `You are Cadence, an AI accounts receivable expert acting as a ghostwriter.
+Your goal is to draft a highly effective email to a client regarding an invoice.
 
-RECIPIENT: ${firstName}
-INVOICE: ${invoiceNumber || 'this invoice'}
-AMOUNT: $${formattedAmount.toLocaleString()}
-DUE DATE: ${formattedDueDate}
-REPEAT CLIENT: ${isRepeat ? 'Yes' : 'No'}
-CLIENT NOTES: ${clientNotes || 'None'}
+You will be provided with:
+- Client Name: ${firstName}
+- Client Profile: ${isRepeat ? 'Repeat client' : 'New client'}. Notes: ${clientNotes || 'None'}
+- Invoice Details: #${invoiceNumber}, Amount: $${formattedAmount.toLocaleString()}, Due: ${formattedDueDate}
+- Contract Terms: ${JSON.stringify(contractTerms)}
+- Cadence Analysis & Strategy: ${advice || 'None'}
+- Detailed Reasoning: ${explanation || 'None'}
+- Target Tone: ${toneKey} - ${toneDesc}
+${emailThread && emailThread.length > 0 ? `- RECENT EMAIL CONTEXT (The client replied recently. YOU MUST RESPOND DIRECTLY TO THEIR LATEST POINTS): \n${emailThread.map((e: any) => `[From ${e.from}]: ${e.snippet}`).join('\n')}` : ''}
+- CONTRACT TERMS (Hierarchical Knowledge Graph):
+${Object.entries(termsMap).map(([k, v]) => `- ${k.replace(/_/g, ' ')}: ${v}`).join('\n') || 'None provided'}
+*(Note: If multiple overlapping terms exist, consider the most recently signed SOW to override the MSA budget/timeline, but overarching legal clauses like Late Fees usually come from the MSA).*
 
-CONTRACT TERMS:
-- Payment terms: ${termsMap.payment_terms || 'Not specified'}
-- Late fee: ${termsMap.late_fee || 'Not specified'}
+CRITICAL RULES & GUARDRAILS:
+1. ONLY return a JSON object with "subject" and "body" keys.
+2. The "body" should be the raw email text. Do not include signature blocks (like [Your Name]). 
+3. Embrace the target tone completely. If the tone is 'strict', be firm. If 'casual_friendly', be warm. If 'humble' or 'empathetic', be highly apologetic.
+4. YOU MUST FOLLOW THE CADENCE ADVICE AND REASONING. If the reasoning says "we overbilled the client" or "we demanded payment too early based on the contract", your email MUST APOLOGIZE and offer to correct the invoice immediately. Do NOT ask them for money if we made a mistake!
+5. ${emailThread && emailThread.length > 0 ? 'SINCE THERE IS AN EMAIL THREAD, this is a REPLY. Do NOT write a first-contact email. Acknowledge what they said in the thread and counter it based on your analysis.' : 'Do NOT hallucinate contract terms that are not provided.'}
 
-ADVICE CONTEXT: ${advice || ''}
-REASONING: ${explanation || ''}
-
-TONE: ${toneKey} — ${toneDesc}
-
-SIGNATURE: ${orgName}
-
-Return ONLY a valid JSON object:
-{
-  "subject": "Email subject line",
-  "body": "Full email body as plain text with line breaks. Start with the greeting, end with the signature. Do not include the subject in the body."
-}
-
-Rules:
 - The greeting should match the tone (e.g. "Hi John," for casual, "Dear John," for formal)
 - Reference the specific contract terms (payment terms, late fees) when relevant
 - Keep it concise — 3-5 short paragraphs maximum

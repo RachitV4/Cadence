@@ -13,6 +13,7 @@ export interface Organization {
   team_size: string;
   created_by: string | null;
   created_at: string;
+  slack_webhook_url?: string;
 }
 
 export interface OrganizationMember {
