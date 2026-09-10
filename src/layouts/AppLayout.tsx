@@ -19,16 +19,37 @@ export function AppLayout() {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [clients, setClients] = useState<Client[]>([]);
 
   const fetchClients = useCallback(async () => {
     if (!organization) return;
-    const { data } = await supabase
+    
+    // Fetch clients
+    const { data: clientsData } = await supabase
       .from('clients')
       .select('*')
       .eq('organization_id', organization.id)
       .order('name', { ascending: true });
-    setClients((data as Client[]) || []);
+      
+    // Fetch invoices to determine risk
+    const { data: invoicesData } = await supabase
+      .from('invoices')
+      .select('client_id, amount, payment_status, due_date')
+      .eq('organization_id', organization.id);
+      
+    const invoices = invoicesData || [];
+    
+    const enrichedClients = (clientsData || []).map(client => {
+      const clientInvoices = invoices.filter(inv => inv.client_id === client.id);
+      const hasHighRisk = clientInvoices.some(inv => {
+        const isOverdue = inv.payment_status !== 'paid' && new Date(inv.due_date) < new Date();
+        return isOverdue && inv.amount > 10000;
+      });
+      return { ...client, hasHighRisk };
+    });
+
+    setClients(enrichedClients as any);
   }, [organization]);
 
   useEffect(() => {
@@ -106,7 +127,14 @@ export function AppLayout() {
                         : 'text-cadence-secondary hover:bg-cadence-surface2'
                     )}
                   >
-                    <span className="w-1.5 h-1.5 rounded-full bg-cadence-muted shrink-0" />
+                    {(client as any).hasHighRisk ? (
+                      <span className="relative flex w-2 h-2 shrink-0">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full w-2 h-2 bg-red-500"></span>
+                      </span>
+                    ) : (
+                      <span className="w-1.5 h-1.5 rounded-full bg-cadence-muted shrink-0" />
+                    )}
                     <span className="truncate">{client.name}</span>
                   </Link>
                   {isActive(`/dashboard/client/${client.id}`) && (
@@ -204,8 +232,10 @@ export function AppLayout() {
               <Search className="w-4 h-4 text-cadence-muted" />
               <input
                 autoFocus
-                placeholder="Search clients, contracts, invoices..."
+                placeholder="Search clients or type a command..."
                 className="flex-1 bg-transparent text-sm outline-none text-cadence-text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') setSearchOpen(false);
                 }}
@@ -215,15 +245,34 @@ export function AppLayout() {
               </button>
             </div>
             <div className="max-h-80 overflow-y-auto scrollbar-thin p-2">
-              {clients.length === 0 ? (
-                <p className="px-3 py-6 text-sm text-cadence-muted text-center">No clients to search yet.</p>
+              <div className="mb-2 px-2 text-[10px] font-bold text-cadence-muted uppercase tracking-wider">Commands</div>
+              {[
+                { name: 'Go to Dashboard', icon: <Activity className="w-4 h-4" />, href: '/dashboard' },
+                { name: 'Create New Client', icon: <UserPlus className="w-4 h-4" />, href: '/dashboard/client/new' },
+                { name: 'Settings & Integrations', icon: <Settings className="w-4 h-4" />, href: '/dashboard/settings' },
+              ].filter(cmd => cmd.name.toLowerCase().includes(searchQuery.toLowerCase())).map((cmd) => (
+                <Link
+                  key={cmd.href}
+                  to={cmd.href}
+                  onClick={() => setSearchOpen(false)}
+                  className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-cadence-surface2 transition-colors mb-1"
+                >
+                  <div className="text-cadence-muted">{cmd.icon}</div>
+                  <span className="text-sm text-cadence-text font-medium">{cmd.name}</span>
+                  <ChevronRight className="w-4 h-4 text-cadence-muted ml-auto" />
+                </Link>
+              ))}
+
+              <div className="mt-4 mb-2 px-2 text-[10px] font-bold text-cadence-muted uppercase tracking-wider">Clients</div>
+              {clients.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
+                <p className="px-3 py-2 text-sm text-cadence-muted">No matching clients.</p>
               ) : (
-                clients.map((c) => (
+                clients.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase())).map((c) => (
                   <Link
                     key={c.id}
                     to={`/dashboard/client/${c.id}`}
                     onClick={() => setSearchOpen(false)}
-                    className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-cadence-surface2 transition-colors"
+                    className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-cadence-surface2 transition-colors mb-1"
                   >
                     <User className="w-4 h-4 text-cadence-muted" />
                     <span className="text-sm text-cadence-text">{c.name}</span>

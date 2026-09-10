@@ -12,6 +12,7 @@ import {
   FileText, Receipt, Brain, Lightbulb, Mail, Copy, Edit, Send,
   Loader2, Check, Shield, Sparkles, Save,
 } from 'lucide-react';
+import confetti from 'canvas-confetti';
 
 export function InvoiceDetail() {
   const { invoiceId } = useParams();
@@ -243,6 +244,13 @@ export function InvoiceDetail() {
       await supabase.from('email_drafts').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', draft.id);
       await logActivity(organization.id, 'email_sent', 'Email sent via Gmail', `${draft.subject} sent to ${client?.contact_email}.`, { client_id: client!.id, invoice_id: invoice!.id });
       
+      confetti({
+        particleCount: 150,
+        spread: 70,
+        origin: { y: 0.6 },
+        colors: ['#3C493F', '#D64545', '#4C5FD5', '#B9770E']
+      });
+
       if (user) {
         await supabase.from('notifications').insert({
           user_id: user.id,
@@ -483,17 +491,37 @@ export function InvoiceDetail() {
                 </button>
               )}
             </div>
-            <div className="rounded-lg border border-cadence-border bg-cadence-bg p-4 space-y-3">
-              <div>
-                <p className="text-xs font-mono text-cadence-muted">To: {client.contact_email || '—'}</p>
+            {emailThread.length > 0 && (
+              <div className="mb-4 flex items-center gap-2 p-2 bg-purple-500/5 border border-purple-500/10 rounded-lg">
+                <div className="flex -space-x-2">
+                  <img src="https://api.dicebear.com/7.x/bottts/svg?seed=Legal" className="w-6 h-6 rounded-full border border-cadence-surface bg-cadence-surface" alt="Legal Agent" />
+                  <img src="https://api.dicebear.com/7.x/bottts/svg?seed=Comms" className="w-6 h-6 rounded-full border border-cadence-surface bg-cadence-surface" alt="Comms Agent" />
+                  <img src="https://api.dicebear.com/7.x/bottts/svg?seed=Coordinator" className="w-6 h-6 rounded-full border border-cadence-surface bg-cadence-surface" alt="Coordinator" />
+                </div>
+                <span className="text-xs text-purple-600/80 font-medium">Multi-Agent team collaborated on this draft.</span>
               </div>
-              <div>
-                <p className="text-xs font-mono text-cadence-muted">Subject:</p>
-                <p className="text-sm text-cadence-text">{draft.subject}</p>
+            )}
+            <div className="rounded-xl border border-cadence-border bg-white shadow-sm overflow-hidden">
+              <div className="bg-cadence-surface2/50 border-b border-cadence-border p-3 flex items-center gap-2">
+                <div className="flex gap-1.5 mr-4">
+                  <div className="w-3 h-3 rounded-full bg-red-400/80"></div>
+                  <div className="w-3 h-3 rounded-full bg-amber-400/80"></div>
+                  <div className="w-3 h-3 rounded-full bg-green-400/80"></div>
+                </div>
+                <span className="text-xs font-medium text-cadence-muted">New Message</span>
               </div>
-              <div>
-                <p className="text-xs font-mono text-cadence-muted mb-1">Body:</p>
-                <p className="text-sm text-cadence-secondary whitespace-pre-wrap leading-relaxed">{draft.body}</p>
+              <div className="p-4 space-y-0 text-sm">
+                <div className="flex border-b border-cadence-border/50 py-2">
+                  <span className="text-cadence-muted w-16">To:</span>
+                  <span className="text-cadence-text font-medium">{client.contact_email || '—'}</span>
+                </div>
+                <div className="flex border-b border-cadence-border/50 py-2">
+                  <span className="text-cadence-muted w-16">Subject:</span>
+                  <span className="text-cadence-text font-medium">{draft.subject}</span>
+                </div>
+                <div className="pt-4">
+                  <p className="text-cadence-text whitespace-pre-wrap leading-relaxed font-body">{draft.body}</p>
+                </div>
               </div>
             </div>
             <div className="flex flex-wrap gap-2 mt-4">

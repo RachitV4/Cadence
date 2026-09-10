@@ -5,6 +5,7 @@ import { useToast } from '@/contexts/ToastContext';
 import { supabase } from '@/lib/supabase';
 import { formatRelativeTime, getInvoiceDueStatus, formatCurrency, formatDate } from '@/lib/utils';
 import { EmptyState, LoadingState, StatusBadge } from '@/components/ui/Primitives';
+import { AutopilotTerminal } from '@/components/AutopilotTerminal';
 import type { Client, Invoice, Contract, ActivityEvent, EmailDraft, ContractFinding } from '@/types';
 import { UserPlus, FileText, Receipt, Lightbulb, ArrowRight, Clock, AlertTriangle, CheckCircle2, TrendingUp, ShieldAlert, AlertCircle, FileWarning, Activity, Globe } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
@@ -19,6 +20,8 @@ export function Dashboard() {
   const [activities, setActivities] = useState<ActivityEvent[]>([]);
   const [drafts, setDrafts] = useState<EmailDraft[]>([]);
   const [highRiskFindings, setHighRiskFindings] = useState<any[]>([]);
+  const [isTerminalOpen, setIsTerminalOpen] = useState(false);
+  const [isSimulating, setIsSimulating] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!organization) return;
@@ -188,21 +191,9 @@ export function Dashboard() {
           </button>
           <button 
             onClick={async () => {
-              const url = prompt('Enter your Slack Webhook URL to enable High Risk notifications:', localStorage.getItem('cadence_slack_webhook') || '');
-              if (url !== null) {
-                localStorage.setItem('cadence_slack_webhook', url);
-                showToast('Slack notifications enabled locally!', 'success');
-              }
-            }}
-            className="btn-secondary flex items-center gap-2 text-[#E01E5A] border-[#E01E5A] hover:bg-[#E01E5A]/10"
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24"><path fill="currentColor" d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM9.013 5.042a2.528 2.528 0 0 1 2.522-2.52A2.528 2.528 0 0 1 14.056 5.042a2.527 2.527 0 0 1-2.521 2.52H9.013v-2.52zM9.013 6.313a2.527 2.527 0 0 1 2.522 2.521 2.527 2.527 0 0 1-2.522 2.521H2.7A2.528 2.528 0 0 1 .18 8.834A2.528 2.528 0 0 1 2.7 6.313h6.313zM18.958 8.835a2.528 2.528 0 0 1 2.52-2.523A2.528 2.528 0 0 1 24 8.835a2.527 2.527 0 0 1-2.522 2.52h-2.52v-2.52zM17.687 8.835a2.527 2.527 0 0 1-2.521 2.52 2.527 2.527 0 0 1-2.521-2.52V2.522A2.528 2.528 0 0 1 15.166 0a2.528 2.528 0 0 1 2.521 2.522v6.313zM14.987 18.958a2.528 2.528 0 0 1-2.522 2.52A2.528 2.528 0 0 1 9.944 18.958a2.527 2.527 0 0 1 2.521-2.52h2.522v2.52zM14.987 17.687a2.527 2.527 0 0 1-2.522-2.521 2.527 2.527 0 0 1 2.522-2.521H21.3a2.528 2.528 0 0 1 2.52 2.521 2.528 2.528 0 0 1-2.52 2.521h-6.313z"/></svg>
-            Slack
-          </button>
-          <button 
-            onClick={async () => {
               try {
-                showToast('Running Autopilot Scan...', 'info');
+                setIsTerminalOpen(true);
+                setIsSimulating(true);
                 const { data: { session } } = await supabase.auth.getSession();
                 const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/daily-scan`, {
                   method: 'POST',
@@ -217,15 +208,21 @@ export function Dashboard() {
                 });
                 if (!res.ok) throw new Error('Scan failed');
                 const data = await res.json();
-                showToast(data.draftsCreated > 0 ? `Autopilot generated ${data.draftsCreated} drafts!` : 'Scan complete. No action needed.', 'success');
-                await fetchData();
+                
+                // wait slightly so terminal finishes at least some animation
+                setTimeout(() => {
+                  showToast(data.draftsCreated > 0 ? `Autopilot generated ${data.draftsCreated} drafts!` : 'Scan complete. No action needed.', 'success');
+                  fetchData();
+                }, 12000); // 12 seconds aligns perfectly with the visual terminal simulation sequence
+                
               } catch (e) {
                 showToast('Autopilot scan failed.', 'error');
+                setIsSimulating(false);
               }
             }}
-            className="btn-primary flex items-center gap-2 bg-gradient-to-r from-cadence-accent to-purple-500 border-0"
+            className="btn-secondary flex items-center gap-2"
           >
-            <svg className="w-4 h-4 text-white" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 14h-2v-2h2zm0-4h-2V7h2z"/></svg>
+            <svg className="w-4 h-4 text-cadence-muted" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 14h-2v-2h2zm0-4h-2V7h2z"/></svg>
             Run Autopilot
           </button>
         </div>
@@ -258,14 +255,22 @@ export function Dashboard() {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        <motion.div 
+          className="grid grid-cols-1 lg:grid-cols-12 gap-8"
+          initial="hidden"
+          animate="show"
+          variants={{
+            hidden: { opacity: 0 },
+            show: { opacity: 1, transition: { staggerChildren: 0.1 } }
+          }}
+        >
           {/* Main Content Column */}
           <div className="lg:col-span-8 space-y-8">
             
             {/* Charts Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Cash Flow Visualizer */}
-              <section className="card p-6 bg-gradient-to-br from-cadence-surface to-cadence-surface2 border-cadence-border/60 shadow-sm">
+              <motion.section variants={{hidden: {opacity:0, y:20}, show: {opacity:1, y:0, transition:{type:'spring',stiffness:300,damping:24}}}} className="card p-6 bg-gradient-to-br from-cadence-surface to-cadence-surface2 border-cadence-border/60 shadow-sm">
                 <div className="flex items-center gap-2 mb-6">
                   <TrendingUp className="w-5 h-5 text-cadence-accent" />
                   <h2 className="font-display text-lg font-bold text-cadence-text">Invoices by Status</h2>
@@ -283,10 +288,10 @@ export function Dashboard() {
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
-              </section>
+              </motion.section>
 
               {/* Financial Pulse (Risk Level) */}
-              <section className="card p-6 bg-gradient-to-br from-cadence-surface to-cadence-surface2 border-cadence-border/60 shadow-sm">
+              <motion.section variants={{hidden: {opacity:0, y:20}, show: {opacity:1, y:0, transition:{type:'spring',stiffness:300,damping:24}}}} className="card p-6 bg-gradient-to-br from-cadence-surface to-cadence-surface2 border-cadence-border/60 shadow-sm">
                 <div className="flex items-center gap-2 mb-6">
                   <Activity className="w-5 h-5 text-[#f59e0b]" />
                   <h2 className="font-display text-lg font-bold text-cadence-text">Total Cash at Risk</h2>
@@ -304,11 +309,11 @@ export function Dashboard() {
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
-              </section>
+              </motion.section>
             </div>
 
             {/* Smart Alerts / Risk Dashboard */}
-            <section>
+            <motion.section variants={{hidden: {opacity:0, y:20}, show: {opacity:1, y:0, transition:{type:'spring',stiffness:300,damping:24}}}}>
               <div className="flex items-center gap-2 mb-4">
                 <ShieldAlert className="w-5 h-5 text-cadence-danger" />
                 <h2 className="font-display text-lg font-bold text-cadence-text">Smart Alerts & Risks</h2>
@@ -375,10 +380,9 @@ export function Dashboard() {
                   );
                 })}
               </div>
-            </section>
+            </motion.section>
 
-            {/* Client Payment Reliability Heatmap */}
-            <section className="card p-6 bg-gradient-to-br from-cadence-surface to-cadence-surface2 border-cadence-border/60 shadow-sm hover:shadow-md transition-shadow">
+            <motion.section variants={{hidden: {opacity:0, y:20}, show: {opacity:1, y:0, transition:{type:'spring',stiffness:300,damping:24}}}} className="card p-6 bg-gradient-to-br from-cadence-surface to-cadence-surface2 border-cadence-border/60 shadow-sm hover:shadow-md transition-shadow">
               <div className="flex items-center gap-2 mb-6">
                 <Activity className="w-5 h-5 text-cadence-accent" />
                 <h2 className="font-display text-lg font-bold text-cadence-text">Client Risk Heatmap</h2>
@@ -408,14 +412,14 @@ export function Dashboard() {
                    </div>
                 )}
               </div>
-            </section>
+            </motion.section>
           </div>
 
           {/* Right Sidebar Column */}
           <div className="lg:col-span-4 space-y-6">
             
             {/* Quick stats */}
-            <section className="grid grid-cols-2 gap-3">
+            <motion.section variants={{hidden: {opacity:0, y:20}, show: {opacity:1, y:0, transition:{type:'spring',stiffness:300,damping:24}}}} className="grid grid-cols-2 gap-3">
               <div className="card p-4 hover:border-cadence-border transition-colors">
                 <div className="flex items-center gap-2 mb-2">
                   <UserPlus className="w-4 h-4 text-cadence-accent" />
@@ -443,11 +447,11 @@ export function Dashboard() {
                   <p className="text-sm font-semibold text-cadence-success">{formatCurrency(invoices.reduce((sum, inv) => sum + inv.amount, 0))}</p>
                 </div>
               </div>
-            </section>
+            </motion.section>
 
             {/* Needs attention (Due Today etc) */}
             {dueTodayInvoices.length > 0 && (
-              <section>
+              <motion.section variants={{hidden: {opacity:0, y:20}, show: {opacity:1, y:0, transition:{type:'spring',stiffness:300,damping:24}}}}>
                 <h3 className="font-display text-sm font-semibold text-cadence-text mb-3 uppercase tracking-wider text-cadence-muted">Due Today</h3>
                 <div className="space-y-2">
                   {dueTodayInvoices.map((inv) => {
@@ -469,12 +473,12 @@ export function Dashboard() {
                     );
                   })}
                 </div>
-              </section>
+              </motion.section>
             )}
 
             {/* Drafts awaiting review */}
             {drafts.length > 0 && (
-              <section>
+              <motion.section variants={{hidden: {opacity:0, y:20}, show: {opacity:1, y:0, transition:{type:'spring',stiffness:300,damping:24}}}}>
                 <h3 className="font-display text-sm font-semibold text-cadence-text mb-3 uppercase tracking-wider text-cadence-muted">Drafts to Review</h3>
                 <div className="space-y-2">
                   {drafts.map((draft) => {
@@ -496,11 +500,11 @@ export function Dashboard() {
                     );
                   })}
                 </div>
-              </section>
+              </motion.section>
             )}
 
             {/* Chamber of Commerce Insights */}
-            <section>
+            <motion.section variants={{hidden: {opacity:0, y:20}, show: {opacity:1, y:0, transition:{type:'spring',stiffness:300,damping:24}}}}>
 
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-display text-sm font-semibold text-cadence-text uppercase tracking-wider text-cadence-muted">Industry Insights</h3>
@@ -517,10 +521,10 @@ export function Dashboard() {
                   </div>
                 ))}
               </div>
-            </section>
+            </motion.section>
 
             {/* Recent activity */}
-            <section>
+            <motion.section variants={{hidden: {opacity:0, y:20}, show: {opacity:1, y:0, transition:{type:'spring',stiffness:300,damping:24}}}}>
               <h3 className="font-display text-sm font-semibold text-cadence-text mb-3 uppercase tracking-wider text-cadence-muted">Recent Activity</h3>
               {activities.length > 0 ? (
                 <div className="card divide-y divide-cadence-border">
@@ -539,10 +543,16 @@ export function Dashboard() {
                   <p className="text-xs text-cadence-muted">No activity yet.</p>
                 </div>
               )}
-            </section>
+            </motion.section>
           </div>
-        </div>
+        </motion.div>
       )}
+      
+      <AutopilotTerminal 
+        isOpen={isTerminalOpen} 
+        onClose={() => setIsTerminalOpen(false)} 
+        isSimulating={isSimulating} 
+      />
     </div>
   );
 }

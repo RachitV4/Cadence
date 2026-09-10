@@ -29,6 +29,8 @@ export function ClientContracts() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResult, setSearchResult] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [processingStep, setProcessingStep] = useState(0);
 
   const fetchData = useCallback(async () => {
     if (!clientId || !organization) return;
@@ -54,6 +56,33 @@ export function ClientContracts() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      setIsDragging(true);
+    };
+    const handleDragLeave = (e: DragEvent) => {
+      e.preventDefault();
+      if (e.clientX === 0 && e.clientY === 0) setIsDragging(false);
+    };
+    const handleDrop = async (e: DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+      const file = e.dataTransfer?.files[0];
+      if (file) {
+        handleUpload(file);
+      }
+    };
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('dragleave', handleDragLeave);
+    window.addEventListener('drop', handleDrop);
+    return () => {
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('dragleave', handleDragLeave);
+      window.removeEventListener('drop', handleDrop);
+    };
+  }, [clientId, organization]);
 
 
   const handleUpload = async (file: File) => {
@@ -161,6 +190,8 @@ export function ClientContracts() {
         throw new Error('Unsupported file type');
       }
 
+      setProcessingStep(1);
+      
       await supabase.from('contract_pages').insert(pageRecords);
       await supabase.from('contracts').update({ processing_stage: 'analyzing', status: 'analyzing' }).eq('id', contractId);
       await fetchData();
@@ -187,6 +218,8 @@ export function ClientContracts() {
       }
       await supabase.from('contract_chunks').insert(chunks.map((c) => ({ ...c, contract_id: contractId })));
 
+      setProcessingStep(2);
+
       // Call edge function for AI analysis
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-contract`;
       const response = await fetch(apiUrl, {
@@ -204,6 +237,9 @@ export function ClientContracts() {
       }
 
       const result = await response.json();
+      
+      setProcessingStep(3);
+      await new Promise(r => setTimeout(r, 1500));
 
       // Save terms
       if (result.terms && Array.isArray(result.terms)) {
@@ -242,12 +278,14 @@ export function ClientContracts() {
       await logActivity(organization!.id, 'contract_analyzed', 'Contract analyzed', `${pageCount} pages processed. Terms and findings extracted.`, { client_id: clientId!, contract_id: contractId });
       showToast('Contract analysis complete.', 'success');
       setUploading(false);
+      setProcessingStep(0);
       await fetchData();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Processing failed';
       await supabase.from('contracts').update({ status: 'failed', error_message: message, processing_stage: 'failed' }).eq('id', contractId);
       showToast('Contract analysis failed. ' + message, 'error');
       setUploading(false);
+      setProcessingStep(0);
       await fetchData();
     }
   };
@@ -307,7 +345,44 @@ export function ClientContracts() {
   if (loading) return <LoadingState message="Loading contracts..." />;
 
   return (
-    <div>
+    <div className="relative min-h-[calc(100vh-8rem)]">
+      {/* Magic Dropzone Overlay */}
+      {(isDragging || processingStep > 0) && (
+        <div className="absolute inset-0 z-50 rounded-xl flex items-center justify-center bg-cadence-bg/80 backdrop-blur-sm border-2 border-dashed border-cadence-accent transition-all duration-300">
+          <div className="text-center">
+            {isDragging ? (
+              <>
+                <div className="w-16 h-16 rounded-full bg-cadence-accent/20 flex items-center justify-center mx-auto mb-4">
+                  <Upload className="w-8 h-8 text-cadence-accent animate-bounce" />
+                </div>
+                <h3 className="font-display text-xl font-semibold text-cadence-text">Drop contract here</h3>
+                <p className="text-cadence-muted mt-2">We'll instantly analyze it.</p>
+              </>
+            ) : (
+              <div className="space-y-4">
+                <div className="w-16 h-16 rounded-full bg-cadence-accent/20 flex items-center justify-center mx-auto mb-6">
+                  <Loader2 className="w-8 h-8 text-cadence-accent animate-spin" />
+                </div>
+                <div className="space-y-3 text-left">
+                  <div className="flex items-center gap-3">
+                    <Check className={`w-5 h-5 ${processingStep > 1 ? 'text-cadence-accent' : 'text-cadence-muted opacity-50'}`} />
+                    <span className={`text-sm ${processingStep > 1 ? 'text-cadence-text font-medium' : 'text-cadence-muted'} transition-all`}>Extracting text...</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Check className={`w-5 h-5 ${processingStep > 2 ? 'text-cadence-accent' : 'text-cadence-muted opacity-50'}`} />
+                    <span className={`text-sm ${processingStep > 2 ? 'text-cadence-text font-medium' : 'text-cadence-muted'} transition-all`}>Identifying loopholes...</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Check className={`w-5 h-5 ${processingStep > 3 ? 'text-cadence-accent' : 'text-cadence-muted opacity-50'}`} />
+                    <span className={`text-sm ${processingStep > 3 ? 'text-cadence-text font-medium' : 'text-cadence-muted'} transition-all`}>Cross-referencing invoices...</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <Breadcrumbs items={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Contracts' }]} />
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
         <h1 className="font-display text-2xl font-semibold text-cadence-text">Contracts</h1>

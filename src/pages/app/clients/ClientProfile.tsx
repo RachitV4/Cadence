@@ -112,9 +112,9 @@ export function ClientProfile() {
                 showToast(e instanceof Error ? e.message : 'Batch negotiation failed.', 'error');
               }
             }}
-            className="btn-primary bg-gradient-to-r from-cadence-accent to-[#E01E5A] border-0"
+            className="btn-secondary"
           >
-            <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 14h-2v-2h2zm0-4h-2V7h2z"/></svg>
+            <svg className="w-4 h-4 mr-2 text-cadence-muted" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 14h-2v-2h2zm0-4h-2V7h2z"/></svg>
             Batch Negotiate
           </button>
         </div>
