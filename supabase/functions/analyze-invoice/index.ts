@@ -6,6 +6,41 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Info, Apikey',
 };
 
+interface InvoiceExtraction {
+  invoice_number: string;
+  amount: number;
+  currency: string;
+  issue_date: string | null;
+  due_date: string | null;
+  description: string;
+}
+
+function parseInvoiceResponse(response: string): InvoiceExtraction {
+  const unfenced = response.replace(/```(?:json)?\s*/gi, '').trim();
+  const start = unfenced.indexOf('{');
+  const end = unfenced.lastIndexOf('}');
+  if (start === -1 || end === -1 || end < start) {
+    throw new Error('NIM returned no JSON object');
+  }
+
+  const parsed = JSON.parse(unfenced.slice(start, end + 1));
+  const amount = Number(parsed.amount);
+  const extracted: InvoiceExtraction = {
+    invoice_number: typeof parsed.invoice_number === 'string' ? parsed.invoice_number.trim() : '',
+    amount: Number.isFinite(amount) ? amount : 0,
+    currency: typeof parsed.currency === 'string' && parsed.currency.trim() ? parsed.currency.trim() : 'USD',
+    issue_date: typeof parsed.issue_date === 'string' ? parsed.issue_date : null,
+    due_date: typeof parsed.due_date === 'string' ? parsed.due_date : null,
+    description: typeof parsed.description === 'string' ? parsed.description.trim() : '',
+  };
+
+  if (!extracted.invoice_number && !extracted.amount && !extracted.due_date && !extracted.issue_date) {
+    throw new Error('NIM did not extract any invoice fields');
+  }
+
+  return extracted;
+}
+
 async function getNimConfig(supabase: ReturnType<typeof createClient>): Promise<{ apiKey: string; apiUrl: string; model: string }> {
   let apiKey = Deno.env.get('NVIDIA_NIM_API_KEY') || Deno.env.get('NIM_API_KEY');
   let apiUrl = Deno.env.get('NVIDIA_NIM_API_URL') || Deno.env.get('NIM_API_URL');
@@ -101,17 +136,14 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    let extracted = {
-      invoice_number: '',
-      amount: 0,
-      currency: 'USD',
-      issue_date: null as string | null,
-      due_date: null as string | null,
-      description: '',
-    };
+    if (!text || text.trim().length <= 10) {
+      return new Response(JSON.stringify({ error: 'No readable invoice text was extracted' }), {
+        status: 422,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
-    if (text && text.trim().length > 10) {
-      const systemPrompt = `You are an invoice extraction AI. Extract the following fields from the invoice text.
+    const systemPrompt = `You are an invoice extraction AI. Extract the following fields from the invoice text.
 Return ONLY a valid JSON object with this exact structure:
 {
   "invoice_number": "the invoice number, e.g. INV-2024-001",
@@ -128,18 +160,20 @@ Rules:
 - If a field cannot be found, use empty string for strings, 0 for amount, null for dates.
 - Return ONLY the JSON, no markdown, no explanation.`;
 
-      try {
-        const aiResponse = await callNim(systemPrompt, text, supabase);
-        const cleaned = aiResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-        extracted = JSON.parse(cleaned);
-      } catch (aiErr) {
-        console.error('AI invoice extraction failed:', aiErr.message);
-      }
+    try {
+      const aiResponse = await callNim(systemPrompt, text, supabase);
+      const extracted = parseInvoiceResponse(aiResponse);
+      return new Response(JSON.stringify(extracted), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    } catch (aiErr) {
+      const message = aiErr instanceof Error ? aiErr.message : 'Invoice extraction failed';
+      console.error('AI invoice extraction failed:', message);
+      return new Response(JSON.stringify({ error: message }), {
+        status: 502,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
-
-    return new Response(JSON.stringify(extracted), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500,

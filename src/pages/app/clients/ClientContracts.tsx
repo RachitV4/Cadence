@@ -158,7 +158,8 @@ export function ClientContracts() {
         throw new Error('Unsupported file type');
       }
 
-      await supabase.from('contract_pages').insert(pageRecords);
+      const { error: pageInsertError } = await supabase.from('contract_pages').insert(pageRecords);
+      if (pageInsertError) throw pageInsertError;
       await supabase.from('contracts').update({ processing_stage: 'analyzing', status: 'analyzing' }).eq('id', contractId);
       await fetchData();
 
@@ -182,7 +183,8 @@ export function ClientContracts() {
           pageStart = i + 2;
         }
       }
-      await supabase.from('contract_chunks').insert(chunks.map((c) => ({ ...c, contract_id: contractId })));
+      const { error: chunkInsertError } = await supabase.from('contract_chunks').insert(chunks.map((c) => ({ ...c, contract_id: contractId })));
+      if (chunkInsertError) throw chunkInsertError;
 
       // Call edge function for AI analysis
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-contract`;
@@ -215,7 +217,11 @@ export function ClientContracts() {
           source_text: t.source_text || '',
           confirmed: false,
         }));
-        await supabase.from('contract_terms').insert(termRecords);
+        if (!termRecords.some((term) => term.status === 'found' && term.term_value)) {
+          throw new Error('Analysis returned no extracted contract terms');
+        }
+        const { error: termInsertError } = await supabase.from('contract_terms').insert(termRecords);
+        if (termInsertError) throw termInsertError;
       }
 
       // Save findings
@@ -232,7 +238,8 @@ export function ClientContracts() {
           confidence: f.confidence || 'medium',
           dismissed: false,
         }));
-        await supabase.from('contract_findings').insert(findingRecords);
+        const { error: findingInsertError } = await supabase.from('contract_findings').insert(findingRecords);
+        if (findingInsertError) throw findingInsertError;
       }
 
       await supabase.from('contracts').update({ status: 'complete', processing_stage: 'complete' }).eq('id', contractId);

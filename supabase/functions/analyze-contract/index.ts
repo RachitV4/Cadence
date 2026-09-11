@@ -27,6 +27,38 @@ interface FindingResult {
   confidence?: string;
 }
 
+const TERM_KEYS = ['payment_terms', 'contract_value', 'late_fee', 'effective_date', 'expiration_date', 'termination', 'liability', 'ip', 'renewal', 'confidentiality', 'milestones'];
+
+function parseJsonResponse(response: string): { terms: TermResult[]; findings: FindingResult[] } {
+  const unfenced = response.replace(/```(?:json)?\s*/gi, '').trim();
+  const start = unfenced.indexOf('{');
+  const end = unfenced.lastIndexOf('}');
+
+  if (start === -1 || end === -1 || end < start) {
+    throw new Error('NIM returned no JSON object');
+  }
+
+  const parsed = JSON.parse(unfenced.slice(start, end + 1));
+  if (!Array.isArray(parsed.terms) || !Array.isArray(parsed.findings)) {
+    throw new Error('NIM response does not match the contract extraction schema');
+  }
+
+  const terms = parsed.terms
+    .filter((term: TermResult) => TERM_KEYS.includes(term.key))
+    .map((term: TermResult) => ({
+      ...term,
+      value: typeof term.value === 'string' ? term.value.trim() : '',
+      status: term.status === 'not_found' ? 'not_found' : 'found',
+      confidence: ['high', 'medium', 'low'].includes(term.confidence) ? term.confidence : 'medium',
+    }));
+
+  if (!terms.some((term: TermResult) => term.status === 'found' && term.value)) {
+    throw new Error('NIM did not extract any contract terms');
+  }
+
+  return { terms, findings: parsed.findings };
+}
+
 async function getNimConfig(supabase: ReturnType<typeof createClient>): Promise<{ apiKey: string; apiUrl: string; model: string }> {
   let apiKey = Deno.env.get('NVIDIA_NIM_API_KEY') || Deno.env.get('NIM_API_KEY');
   let apiUrl = Deno.env.get('NVIDIA_NIM_API_URL') || Deno.env.get('NIM_API_URL');
@@ -122,12 +154,13 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    await supabase.from('contract_analysis_runs').insert({
+    const { data: analysisRun, error: analysisRunError } = await supabase.from('contract_analysis_runs').insert({
       contract_id: contractId,
       stage: 'ai_extraction',
       status: 'running',
       details: { text_length: text.length, page_count: pageCount },
-    });
+    }).select('id').single();
+    if (analysisRunError) throw analysisRunError;
 
     const startTime = Date.now();
 
@@ -166,15 +199,19 @@ Rules:
 
     try {
       const aiResponse = await callNim(systemPrompt, text, supabase);
-      const cleaned = aiResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      const parsed = JSON.parse(cleaned);
-      terms = parsed.terms || [];
-      findings = parsed.findings || [];
+      ({ terms, findings } = parseJsonResponse(aiResponse));
     } catch (aiErr) {
-      console.error('AI extraction failed, falling back to heuristic:', aiErr.message);
-      // Fallback: mark as not_found
-      const fallbackKeys = ['payment_terms', 'contract_value', 'late_fee', 'effective_date', 'expiration_date', 'termination', 'liability', 'ip', 'renewal', 'confidentiality', 'milestones'];
-      terms = fallbackKeys.map(k => ({ key: k, value: '', status: 'not_found', confidence: 'low' }));
+      const message = aiErr instanceof Error ? aiErr.message : 'Contract extraction failed';
+      console.error('AI contract extraction failed:', message);
+      await supabase.from('contract_analysis_runs').update({
+        status: 'failed',
+        duration_ms: Date.now() - startTime,
+        error_message: message,
+      }).eq('id', analysisRun.id);
+      return new Response(JSON.stringify({ error: message }), {
+        status: 502,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     const duration = Date.now() - startTime;
@@ -183,7 +220,7 @@ Rules:
       status: 'complete',
       duration_ms: duration,
       details: { terms_found: terms.filter(t => t.status === 'found').length, findings_count: findings.length },
-    }).eq('contract_id', contractId).eq('stage', 'ai_extraction');
+    }).eq('id', analysisRun.id);
 
     return new Response(JSON.stringify({ terms, findings }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

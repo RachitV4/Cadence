@@ -47,6 +47,7 @@ export function ClientInvoices() {
     setFileUrl(URL.createObjectURL(file));
     setUploading(true);
     setError('');
+    let invoiceId: string | null = null;
     try {
       const fileId = crypto.randomUUID();
       const filePath = `${organization.id}/${clientId}/${fileId}-${file.name}`;
@@ -67,6 +68,7 @@ export function ClientInvoices() {
         .select()
         .single();
       if (insertError) throw insertError;
+      invoiceId = invData.id;
       await logActivity(organization.id, 'invoice_uploaded', 'Invoice uploaded', `${file.name} uploaded.`, { client_id: clientId, invoice_id: invData.id });
       showToast('Invoice uploaded. Extracting details...', 'success');
 
@@ -92,6 +94,7 @@ export function ClientInvoices() {
       }
 
       // Call edge function for extraction
+      if (!fullText.trim()) throw new Error('No readable text was extracted from this invoice');
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-invoice`;
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -118,13 +121,20 @@ export function ClientInvoices() {
         extraction_status: 'complete',
         status: 'extracted',
       };
-      await supabase.from('invoices').update(updateData).eq('id', invData.id);
+      if (!result.invoice_number && !result.amount && !result.issue_date && !result.due_date) {
+        throw new Error('Extraction returned no invoice fields');
+      }
+      const { error: updateError } = await supabase.from('invoices').update(updateData).eq('id', invData.id);
+      if (updateError) throw updateError;
       await logActivity(organization.id, 'invoice_extracted', 'Invoice fields extracted', `Cadence extracted invoice details.`, { client_id: clientId!, invoice_id: invData.id });
       setUploading(false);
       showToast('Invoice details extracted.', 'success');
       await fetchData();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Upload failed';
+      if (invoiceId) {
+        await supabase.from('invoices').update({ extraction_status: 'failed', status: 'failed', error_message: message }).eq('id', invoiceId);
+      }
       setError(message);
       showToast('Invoice upload failed. ' + message, 'error');
       setUploading(false);
