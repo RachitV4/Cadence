@@ -55,7 +55,10 @@ def _parse_date(value: Any) -> date | None:
 
 
 def _is_paid(invoice: dict[str, Any]) -> bool:
-    return _normalise(invoice.get("status")) in PAID_STATUSES
+    payment_status = _normalise(invoice.get("payment_status"))
+    return (
+        payment_status or _normalise(invoice.get("status"))
+    ) in PAID_STATUSES
 
 
 def _is_milestone_dependent(contract: dict[str, Any]) -> bool:
@@ -171,7 +174,7 @@ def generate_smart_alerts(
         id
         client_id
         due_date
-        status
+        payment_status
 
     Required client history:
         average_payment_delay_days

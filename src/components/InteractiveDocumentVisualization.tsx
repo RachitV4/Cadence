@@ -1,13 +1,6 @@
-//This is the initial implementation of the Interactive Document Visualization feature and should be treated as an
-// incomplete MVP, not the final version. The current version provides PDF rendering, page navigation, source-text
-// display, and finding → source-page navigation; exact source-region highlighting is still pending because the
-// current extraction data does not yet provide bounding-box coordinates. The next step is to connect this properly
-// to the final extraction/backend data, verify the real contract/invoice flow, and add exact highlighting once page
-// coordinates are available, while preserving the current integration with the existing frontend.
-
-
 import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, FileText, Loader2 } from 'lucide-react';
+import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 
 interface InteractiveDocumentVisualizationProps {
   fileUrl: string | null;
@@ -18,7 +11,6 @@ interface InteractiveDocumentVisualizationProps {
   onPageChange: (page: number) => void;
 }
 
-/** Renders the page behind a selected extraction; bbox highlights can be added later. */
 export function InteractiveDocumentVisualization({
   fileUrl,
   fileName,
@@ -29,7 +21,7 @@ export function InteractiveDocumentVisualization({
 }: InteractiveDocumentVisualizationProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const [pdf, setPdf] = useState<any>(null);
+  const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [loadedPages, setLoadedPages] = useState(pageCount || 1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -88,12 +80,7 @@ export function InteractiveDocumentVisualization({
   }, [fileUrl, isPdf]);
 
   useEffect(() => {
-    let renderTask:
-      | {
-          cancel: () => void;
-          promise: Promise<unknown>;
-        }
-      | undefined;
+    let renderTask: RenderTask | undefined;
 
     async function renderPage() {
       if (!pdf || !canvasRef.current) {
@@ -122,6 +109,7 @@ export function InteractiveDocumentVisualization({
         canvas.height = viewport.height;
 
         const task = page.render({
+          canvas,
           canvasContext: context,
           viewport,
         });
@@ -129,8 +117,8 @@ export function InteractiveDocumentVisualization({
         renderTask = task;
 
         await task.promise;
-      } catch (renderError: any) {
-        if (renderError?.name !== 'RenderingCancelledException') {
+      } catch (renderError: unknown) {
+        if (!(renderError instanceof Error && renderError.name === 'RenderingCancelledException')) {
           setError('Unable to render this page.');
         }
       } finally {

@@ -6,6 +6,7 @@ import { useToast } from '@/contexts/ToastContext';
 import { logActivity, formatFileSize, formatRelativeTime } from '@/lib/utils';
 import { LoadingState, EmptyState, StatusBadge, Breadcrumbs, SeverityBadge, ConfidenceBadge } from '@/components/ui/Primitives';
 import { Modal } from '@/components/ui/Modal';
+import { InteractiveDocumentVisualization } from '@/components/InteractiveDocumentVisualization';
 import type { Contract, ContractTerm, ContractFinding, ContractPage } from '@/types';
 import { TERM_LABELS } from '@/types';
 import { Upload, FileText, Loader2, Check, Edit, Eye, AlertTriangle, X, ChevronDown } from 'lucide-react';
@@ -23,9 +24,11 @@ export function ClientContracts() {
   const [uploading, setUploading] = useState(false);
   const [editingTerm, setEditingTerm] = useState<ContractTerm | null>(null);
   const [editValue, setEditValue] = useState('');
-  const [viewingPage, setViewingPage] = useState<ContractPage | null>(null);
   const [expandedFindings, setExpandedFindings] = useState<Set<string>>(new Set());
   const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [activePage, setActivePage] = useState(1);
+  const [sourceText, setSourceText] = useState('');
+  const latestContract = contracts[0];
 
   const fetchData = useCallback(async () => {
     if (!clientId || !organization) return;
@@ -51,6 +54,28 @@ export function ClientContracts() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (!latestContract?.file_path) return;
+
+    let cancelled = false;
+    supabase.storage.from('contracts').createSignedUrl(latestContract.file_path, 60 * 60)
+      .then(({ data }) => {
+        if (!cancelled && data?.signedUrl) setFileUrl(data.signedUrl);
+      });
+
+    return () => { cancelled = true; };
+  }, [latestContract?.file_path]);
+
+  useEffect(() => {
+    setActivePage(1);
+    setSourceText('');
+  }, [latestContract?.id]);
+
+  const showSource = (page: number | null, text: string) => {
+    if (page) setActivePage(page);
+    setSourceText(text);
+  };
 
 
   const handleUpload = async (file: File) => {
@@ -294,13 +319,17 @@ export function ClientContracts() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Left Side: Document Preview */}
         <div>
-          {fileUrl ? (
-            <object data={fileUrl} className="w-full h-[800px] rounded-xl border border-cadence-border" />
-          ) : (
-            <div className="w-full h-[800px] rounded-xl border border-cadence-border bg-cadence-surface flex items-center justify-center text-cadence-muted">
-              No document selected
-            </div>
-          )}
+          <InteractiveDocumentVisualization
+            fileUrl={fileUrl}
+            fileName={latestContract?.file_name || ''}
+            pageCount={latestContract?.page_count || 1}
+            activePage={activePage}
+            sourceText={sourceText}
+            onPageChange={(page) => {
+              setActivePage(page);
+              setSourceText('');
+            }}
+          />
         </div>
 
         {/* Right Side: Verification Forms and Upload */}
@@ -405,7 +434,7 @@ export function ClientContracts() {
                         </div>
                         <p className="text-sm font-medium text-cadence-text font-mono">{term.edited_value || term.term_value || '—'}</p>
                         {term.source_page && (
-                          <button onClick={() => setViewingPage(pages.find((p) => p.page_number === term.source_page) || null)} className="text-xs text-cadence-accent hover:underline mt-1.5 flex items-center gap-1">
+                          <button onClick={() => showSource(term.source_page, term.source_text)} className="text-xs text-cadence-accent hover:underline mt-1.5 flex items-center gap-1">
                             <Eye className="w-3 h-3" /> Page {term.source_page}{term.source_section ? ` · ${term.source_section}` : ''}
                           </button>
                         )}
@@ -456,7 +485,7 @@ export function ClientContracts() {
                             )}
                             <div className="flex items-center gap-3">
                               {finding.source_page && (
-                                <button onClick={() => setViewingPage(pages.find((p) => p.page_number === finding.source_page) || null)} className="text-xs text-cadence-accent hover:underline flex items-center gap-1">
+                                <button onClick={() => showSource(finding.source_page, finding.source_text)} className="text-xs text-cadence-accent hover:underline flex items-center gap-1">
                                   <Eye className="w-3 h-3" /> Page {finding.source_page}{finding.source_section ? ` · ${finding.source_section}` : ''}
                                 </button>
                               )}
@@ -498,20 +527,6 @@ export function ClientContracts() {
         </div>
       </Modal>
 
-      {/* Page viewer modal */}
-      <Modal open={!!viewingPage} onClose={() => setViewingPage(null)} title={viewingPage ? `Page ${viewingPage.page_number}` : ''} className="max-w-2xl">
-        {viewingPage && (
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <StatusBadge status={viewingPage.extraction_status} />
-              <span className="text-xs font-mono text-cadence-muted">{viewingPage.extraction_method} · {viewingPage.char_count} chars</span>
-            </div>
-            <div className="rounded-lg bg-cadence-surface2 p-4 max-h-96 overflow-y-auto scrollbar-thin">
-              <pre className="text-xs text-cadence-secondary whitespace-pre-wrap font-mono leading-relaxed">{viewingPage.text_content || '(No text extracted from this page)'}</pre>
-            </div>
-          </div>
-        )}
-      </Modal>
     </div>
   );
 }
