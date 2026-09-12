@@ -7,18 +7,26 @@ MAX_TONE = 100
 
 TONE_ANCHORS = {
     0: "Humble",
+    10: "Gentle",
     25: "Casual / Friendly",
     40: "Modest",
     50: "Formal",
-    75: "Strict",
+    60: "Professional",
+    75: "Firm",
+    85: "Direct",
+    90: "Strict",
     100: "Strict & Formal",
 }
 
 TONE_CHARACTERISTICS = {
     "Humble": ("warm", "humble", "empathetic", "low pressure"),
+    "Gentle": ("warm", "considerate", "empathetic", "low pressure"),
     "Casual / Friendly": ("friendly", "approachable", "polite", "lightly assertive"),
     "Modest": ("measured", "understated", "factual", "low pressure"),
     "Formal": ("professional", "clear", "neutral", "balanced"),
+    "Professional": ("professional", "clear", "structured", "balanced"),
+    "Firm": ("clear", "assertive", "professional", "action-oriented"),
+    "Direct": ("direct", "concise", "assertive", "clear expectations"),
     "Strict": ("firm", "direct", "assertive", "clear expectations"),
     "Strict & Formal": (
         "formal",

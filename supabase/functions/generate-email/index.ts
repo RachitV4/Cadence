@@ -67,15 +67,22 @@ const TONE_DESCRIPTIONS: Record<string, string> = {
 
 const TONE_ANCHORS = [
   { level: 0, key: 'humble', label: 'Humble' },
+  { level: 10, key: 'humble', label: 'Gentle' },
   { level: 25, key: 'casual_friendly', label: 'Casual / Friendly' },
   { level: 40, key: 'modest', label: 'Modest' },
   { level: 50, key: 'formal', label: 'Formal' },
-  { level: 75, key: 'strict', label: 'Strict' },
+  { level: 60, key: 'formal', label: 'Professional' },
+  { level: 75, key: 'strict', label: 'Firm' },
+  { level: 85, key: 'strict', label: 'Direct' },
+  { level: 90, key: 'strict', label: 'Strict' },
   { level: 100, key: 'strict', label: 'Strict & Formal' },
 ];
 
 function getToneAnchor(value: unknown) {
-  const level = Math.min(100, Math.max(0, Math.round(Number(value)) || 25));
+  const numericLevel = Number(value);
+  const level = Number.isFinite(numericLevel)
+    ? Math.min(100, Math.max(0, Math.round(numericLevel)))
+    : 25;
   return TONE_ANCHORS.reduce((nearest, anchor) =>
     Math.abs(anchor.level - level) < Math.abs(nearest.level - level) ? anchor : nearest,
   );

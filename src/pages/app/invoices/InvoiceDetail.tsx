@@ -80,12 +80,14 @@ export function InvoiceDetail() {
     fetchData();
   }, [fetchData]);
 
+  const recommendedToneKey = analysis?.recommended_tone;
+
   useEffect(() => {
-    if (!analysis) return;
-    const level = toneLevelFromKey(analysis.recommended_tone as ToneKey);
+    if (!recommendedToneKey) return;
+    const level = toneLevelFromKey(recommendedToneKey as ToneKey);
     setRecommendedToneLevel(level);
     setToneLevel(level);
-  }, [analysis?.id, analysis?.recommended_tone]);
+  }, [analysis?.id, recommendedToneKey]);
 
   const generateAdvice = async () => {
     if (!invoice || !client || !organization) return;
@@ -203,11 +205,11 @@ export function InvoiceDetail() {
 
       const { data: clientTone } = await supabase
         .from('client_tones')
-        .select('average_tone_level, tone_sample_count')
+        .select('selected_tone, selected_tone_level, average_tone_level, tone_sample_count')
         .eq('client_id', client.id)
         .maybeSingle();
       const sampleCount = clientTone?.tone_sample_count || 0;
-      const averageTone = Number(clientTone?.average_tone_level || 50);
+      const averageTone = Number(clientTone?.average_tone_level ?? 50);
       const nextToneLevel = normalizeToneLevel(toneLevel);
       const nextSampleCount = draft && sampleCount > 0 ? sampleCount : sampleCount + 1;
       const nextAverage = draft && sampleCount > 0
@@ -216,7 +218,8 @@ export function InvoiceDetail() {
       const { error: toneError } = await supabase.from('client_tones').upsert({
         client_id: client.id,
         organization_id: organization.id,
-        selected_tone: draftValues.tone,
+        selected_tone: clientTone?.selected_tone || 'casual_friendly',
+        selected_tone_level: clientTone?.selected_tone_level ?? 25,
         average_tone_level: nextAverage,
         tone_sample_count: nextSampleCount,
       }, { onConflict: 'client_id' });
@@ -316,7 +319,7 @@ export function InvoiceDetail() {
   const dueStatus = getInvoiceDueStatus(invoice.due_date, invoice.payment_status);
   const invoiceAge = getInvoiceAge(invoice.due_date);
   const previousInvoices = allInvoices.filter((i) => i.id !== invoice.id);
-  const smartAlerts = getSmartAlerts(invoice, paymentHistory);
+  const smartAlerts = getSmartAlerts(invoice, paymentHistory, paymentPromise);
   const selectedTone = getToneAnchor(toneLevel);
   const recommendedTone = getToneAnchor(recommendedToneLevel);
 
@@ -398,9 +401,9 @@ export function InvoiceDetail() {
         </div>
 
         {smartAlerts.map((alert) => (
-          <div key={alert.title} className="card p-5 border-cadence-warning">
+          <div key={alert.title} className={`card p-5 ${alert.severity === 'high' ? 'border-cadence-danger' : 'border-cadence-warning'}`}>
             <div className="flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-cadence-warning mt-0.5 shrink-0" />
+              <AlertTriangle className={`w-5 h-5 mt-0.5 shrink-0 ${alert.severity === 'high' ? 'text-cadence-danger' : 'text-cadence-warning'}`} />
               <div>
                 <h2 className="text-sm font-medium text-cadence-text">{alert.title}</h2>
                 <p className="mt-1 text-sm text-cadence-secondary">{alert.message}</p>
@@ -511,7 +514,7 @@ export function InvoiceDetail() {
               onChange={(event) => setToneLevel(normalizeToneLevel(Number(event.target.value)))}
             />
             <div className="mt-2 flex justify-between text-2xs text-cadence-muted">
-              {TONE_ANCHORS.filter((anchor) => anchor.level !== 40).map((anchor) => <span key={anchor.level}>{anchor.level}</span>)}
+              {TONE_ANCHORS.map((anchor) => <span key={anchor.level} title={anchor.label}>{anchor.level}</span>)}
             </div>
             <p className="mt-3 text-xs text-cadence-muted">
               {toneLevel === recommendedToneLevel ? 'Using Cadence’s AI recommendation.' : 'You have overridden Cadence’s AI recommendation for this invoice.'}

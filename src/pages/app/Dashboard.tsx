@@ -3,10 +3,14 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { formatRelativeTime, getInvoiceDueStatus, formatCurrency, formatDate } from '@/lib/utils';
-import { EmptyState, LoadingState, StatusBadge } from '@/components/ui/Primitives';
+import { EmptyState, LoadingState } from '@/components/ui/Primitives';
 import type { Client, Invoice, Contract, ActivityEvent, EmailDraft, ContractFinding } from '@/types';
-import { UserPlus, FileText, Receipt, Lightbulb, ArrowRight, Clock, AlertTriangle, CheckCircle2, TrendingUp, ShieldAlert, AlertCircle, FileWarning } from 'lucide-react';
+import { UserPlus, FileText, Receipt, Lightbulb, ArrowRight, Clock, CheckCircle2, TrendingUp, ShieldAlert, AlertCircle, FileWarning } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+
+type HighRiskFinding = ContractFinding & {
+  contract?: { file_name?: string; client?: { name?: string } };
+};
 
 export function Dashboard() {
   const { profile, organization } = useAuth();
@@ -16,7 +20,7 @@ export function Dashboard() {
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [activities, setActivities] = useState<ActivityEvent[]>([]);
   const [drafts, setDrafts] = useState<EmailDraft[]>([]);
-  const [highRiskFindings, setHighRiskFindings] = useState<any[]>([]);
+  const [highRiskFindings, setHighRiskFindings] = useState<HighRiskFinding[]>([]);
 
   const fetchData = useCallback(async () => {
     if (!organization) return;
@@ -39,7 +43,7 @@ export function Dashboard() {
     setContracts((contractsRes.data as Contract[]) || []);
     setActivities((activitiesRes.data as ActivityEvent[]) || []);
     setDrafts((draftsRes.data as EmailDraft[]) || []);
-    setHighRiskFindings(findingsRes.data || []);
+    setHighRiskFindings((findingsRes.data as HighRiskFinding[]) || []);
     setLoading(false);
   }, [organization]);
 
@@ -153,7 +157,7 @@ export function Dashboard() {
                     <Tooltip 
                       cursor={{ fill: 'transparent' }}
                       contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
-                      formatter={(value: number) => [formatCurrency(value), 'Amount']}
+                      formatter={(value) => [formatCurrency(Number(Array.isArray(value) ? value[0] : value ?? 0)), 'Amount'] as [string, string]}
                     />
                     <Bar dataKey="amount" radius={[6, 6, 0, 0]} maxBarSize={60}>
                       {chartData.map((entry, index) => (

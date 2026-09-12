@@ -191,6 +191,7 @@ export interface ClientTone {
   client_id: string;
   organization_id: string;
   selected_tone: string;
+  selected_tone_level: number;
   average_tone_level: number;
   tone_sample_count: number;
   created_at: string;
