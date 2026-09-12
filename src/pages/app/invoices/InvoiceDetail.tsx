@@ -39,7 +39,6 @@ export function InvoiceDetail() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editSubject, setEditSubject] = useState('');
   const [editBody, setEditBody] = useState('');
-  const [selectedTone, setSelectedTone] = useState<ToneKey>('casual_friendly');
   const [emailThread, setEmailThread] = useState<any[]>([]);
   const [toneLevel, setToneLevel] = useState(25);
   const [recommendedToneLevel, setRecommendedToneLevel] = useState(25);

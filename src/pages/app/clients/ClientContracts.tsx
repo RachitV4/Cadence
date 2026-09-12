@@ -111,7 +111,6 @@ export function ClientContracts() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
   };
->>>>>>> cadence-remote/rishaan_new_work
 
 
   const handleUpload = async (file: File) => {
