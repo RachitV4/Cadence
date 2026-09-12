@@ -75,6 +75,9 @@ export function ClientContracts() {
   const showSource = (page: number | null, text: string) => {
     if (page) setActivePage(page);
     setSourceText(text);
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
   };
 
 

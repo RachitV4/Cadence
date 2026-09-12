@@ -201,13 +201,14 @@ export function InvoiceDetail() {
             client_id: client.id,
           });
       const { data: savedDraft, error: draftError } = await draftQuery.select().single();
-      if (draftError) throw draftError;
+      if (draftError) throw new Error(`Saving email draft failed: ${draftError.message}`);
 
-      const { data: clientTone } = await supabase
+      const { data: clientTone, error: clientToneReadError } = await supabase
         .from('client_tones')
         .select('selected_tone, selected_tone_level, average_tone_level, tone_sample_count')
         .eq('client_id', client.id)
         .maybeSingle();
+      if (clientToneReadError) throw new Error(`Loading client tone history failed: ${clientToneReadError.message}`);
       const sampleCount = clientTone?.tone_sample_count || 0;
       const averageTone = Number(clientTone?.average_tone_level ?? 50);
       const nextToneLevel = normalizeToneLevel(toneLevel);
@@ -223,7 +224,7 @@ export function InvoiceDetail() {
         average_tone_level: nextAverage,
         tone_sample_count: nextSampleCount,
       }, { onConflict: 'client_id' });
-      if (toneError) throw toneError;
+      if (toneError) throw new Error(`Saving client tone history failed: ${toneError.message}`);
 
       await logActivity(organization.id, draft ? 'draft_regenerated' : 'draft_created', draft ? 'Email draft regenerated' : 'Email draft created', `Draft created for ${invoice.invoice_number}.`, { client_id: client.id, invoice_id: invoice.id });
       showToast(draft ? 'Email draft regenerated.' : 'Email draft created.', 'success');
