@@ -24,91 +24,128 @@ function createPdf(filename, title, content) {
   console.log(`Generated: ${outPath}`);
 }
 
-const msaContent = `MASTER SERVICES AGREEMENT
+const msa1Content = `MASTER SERVICES AGREEMENT
 
-This Master Services Agreement ("MSA") is entered into by and between Cadence ("Provider") and Omega Logistics ("Client") as of January 1, 2026.
+This Master Services Agreement ("MSA") is entered into by and between Cadence ("Provider") and Apex Software Systems ("Client") as of January 1, 2026.
 
 1. SERVICES
-Provider agrees to perform services as defined in individual Statements of Work (SOWs) executed by both parties. This MSA governs all subsequent SOWs.
+Provider agrees to perform enterprise software development and consulting services as defined in individual Statements of Work (SOWs) executed by both parties. This MSA governs all subsequent SOWs and supersedes all prior agreements.
 
 2. PAYMENT TERMS
-Client shall pay all undisputed invoices within Net 60 days of the invoice date. All payments must be made in USD.
+Client shall pay all undisputed invoices within Net 30 days of the invoice date. All payments must be made in USD via wire transfer. Invoices will be issued monthly based on milestones achieved.
 
-3. LATE FEES
-In the event that Client fails to pay any invoice within the Net 60 period, a late fee penalty of 2.5% per month will be applied to the outstanding balance. 
+3. LATE FEES AND PENALTIES
+In the event that Client fails to pay any invoice within the Net 30 period, a late fee penalty of 2.0% per month will be applied to the outstanding balance. Provider reserves the right to suspend services if payment is overdue by more than 15 days past the grace period.
 
-4. TERMINATION
-Either party may terminate this agreement with 30 days written notice. In the event of termination, Client is responsible for all work performed up to the termination date.
+4. INTELLECTUAL PROPERTY
+Upon full payment of all undisputed fees, Provider grants Client a perpetual, non-exclusive license to use the developed software.
 
 IN WITNESS WHEREOF, the parties have executed this MSA.
 
-Omega Logistics: [Signed: CEO]
+Apex Software Systems: [Signed: CEO]
 Date: January 1, 2026`;
 
-createPdf('Omega_Logistics_MSA.pdf', 'MASTER SERVICES AGREEMENT', msaContent);
+createPdf('Apex_Software_Systems_MSA.pdf', 'MASTER SERVICES AGREEMENT', msa1Content);
 
-
-const sow1Content = `STATEMENT OF WORK #1: Phase 1 Onboarding
-
-This Statement of Work (SOW) is governed by the Master Services Agreement (MSA) dated January 1, 2026.
-
-1. SCOPE OF WORK
-Provider will configure and deploy the initial software logistics tracking module for Omega Logistics.
-
-2. TIMELINE
-Start Date: February 1, 2026
-Completion Date: March 31, 2026
-
-3. BUDGET
-The total approved budget for Phase 1 is $35,000.00 USD. This is a fixed-fee engagement.
-
-4. DELIVERABLES
-- Logistics Tracking Module implementation.
-- User training sessions (2).
-- System architecture documentation.
-
-Omega Logistics: [Signed: VP Engineering]
-Date: January 15, 2026`;
-
-createPdf('Omega_Logistics_SOW_Phase1.pdf', 'STATEMENT OF WORK #1', sow1Content);
-
-
-const sow2Content = `STATEMENT OF WORK #2: Phase 2 Automation Expansion
-
-This Statement of Work (SOW) is governed by the Master Services Agreement (MSA) dated January 1, 2026.
-
-1. SCOPE OF WORK
-Provider will integrate AI-driven routing optimization into the existing logistics tracking module.
-
-2. TIMELINE
-Start Date: April 1, 2026
-Completion Date: June 30, 2026
-
-3. BUDGET
-The total approved budget for Phase 2 is $50,000.00 USD. This is a fixed-fee engagement. Any overages must be pre-approved in writing.
-
-4. DELIVERABLES
-- AI Routing algorithm integration.
-- Dashboard analytics deployment.
-
-Omega Logistics: [Signed: VP Engineering]
-Date: March 15, 2026`;
-
-createPdf('Omega_Logistics_SOW_Phase2.pdf', 'STATEMENT OF WORK #2', sow2Content);
-
-const invoiceContent = `INVOICE #INV-2026-004
+const invoice1Content = `INVOICE #INV-2026-042
 
 From: Cadence
-To: Omega Logistics
-Date: July 1, 2026
-Due Date: July 15, 2026 (Net 14)
+To: Apex Software Systems
+Date: August 1, 2026
+Due Date: August 31, 2026 (Net 30)
 
 DESCRIPTION:
-Phase 2 Automation Expansion - Final Deliverables
+Enterprise Software Development - Q3 Milestone 1 Delivery
+Backend infrastructure migration and API endpoints.
 
 AMOUNT DUE:
-$65,000.00 USD
+$120,000.00 USD
 
-Please remit payment within 14 days to avoid disruptions.`;
+Please remit payment within 30 days to avoid disruptions and late fees (2.0% per month).`;
 
-createPdf('Omega_Logistics_Invoice_65k.pdf', 'INVOICE', invoiceContent);
+createPdf('Apex_Software_Systems_Invoice_120k.pdf', 'INVOICE', invoice1Content);
+
+
+const msa2Content = `MASTER SERVICES AGREEMENT
+
+This Master Services Agreement ("MSA") is entered into by and between Cadence ("Provider") and Vertex Global Solutions ("Client") as of March 15, 2026.
+
+1. SERVICES
+Provider agrees to perform security auditing, penetration testing, and compliance consulting services as defined in individual Statements of Work (SOWs) executed by both parties.
+
+2. PAYMENT TERMS
+Client shall pay all undisputed invoices within Net 45 days of the invoice date. All payments must be made in USD.
+
+3. LATE FEES
+In the event that Client fails to pay any invoice within the Net 45 period, a late fee penalty of 1.5% per month will be applied to the outstanding balance.
+
+4. CONFIDENTIALITY
+Both parties agree to maintain strict confidentiality regarding any proprietary data, vulnerability reports, or trade secrets exchanged during the course of the engagement. This confidentiality clause survives termination for a period of five (5) years.
+
+IN WITNESS WHEREOF, the parties have executed this MSA.
+
+Vertex Global Solutions: [Signed: CISO]
+Date: March 15, 2026`;
+
+createPdf('Vertex_Global_Solutions_MSA.pdf', 'MASTER SERVICES AGREEMENT', msa2Content);
+
+
+const invoice2Content = `INVOICE #INV-2026-089
+
+From: Cadence
+To: Vertex Global Solutions
+Date: July 15, 2026
+Due Date: August 29, 2026 (Net 45)
+
+DESCRIPTION:
+Comprehensive Security Audit and Penetration Test Report
+SOC2 Compliance readiness assessment and remediation guide.
+
+AMOUNT DUE:
+$85,500.00 USD
+
+Please remit payment within 45 days as per MSA terms.`;
+
+const msa3Content = `MASTER SERVICES AGREEMENT
+
+This Master Services Agreement ("MSA") is entered into by and between Cadence ("Provider") and Lumina Design Studio ("Client") as of May 1, 2026.
+
+1. SERVICES
+Provider agrees to perform UI/UX design, brand identity creation, and web development services as defined in individual Statements of Work (SOWs) executed by both parties.
+
+2. PAYMENT TERMS
+Client shall pay all undisputed invoices within Net 15 days of the invoice date. All payments must be made in USD.
+
+3. LATE FEES
+In the event that Client fails to pay any invoice within the Net 15 period, a late fee penalty of 5% of the outstanding balance will be applied every 30 days until paid. Provider reserves the right to withhold final design assets (Figma files, source code, logos) until full payment is received.
+
+4. REVISIONS AND SCOPE CREEP
+Each SOW includes a maximum of two (2) rounds of revisions. Additional revisions will be billed at an hourly rate of $150/hr. 
+
+IN WITNESS WHEREOF, the parties have executed this MSA.
+
+Lumina Design Studio: [Signed: Creative Director]
+Date: May 1, 2026`;
+
+createPdf('Lumina_Design_Studio_MSA.pdf', 'MASTER SERVICES AGREEMENT', msa3Content);
+
+
+const invoice3Content = `INVOICE #INV-2026-112
+
+From: Cadence
+To: Lumina Design Studio
+Date: September 1, 2026
+Due Date: September 16, 2026 (Net 15)
+
+DESCRIPTION:
+Comprehensive Brand Identity Redesign & UI System
+- Final Logo marks and typography guidelines.
+- Figma UI Kit (50+ components).
+- 3 rounds of revisions (1 extra billed at $150/hr for 10 hours).
+
+AMOUNT DUE:
+$42,500.00 USD
+
+Please remit payment within 15 days to release the final source files.`;
+
+createPdf('Lumina_Design_Studio_Invoice_42k.pdf', 'INVOICE', invoice3Content);

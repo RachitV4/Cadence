@@ -9,6 +9,7 @@ import { AutopilotTerminal } from '@/components/AutopilotTerminal';
 import type { Client, Invoice, Contract, ActivityEvent, EmailDraft, ContractFinding } from '@/types';
 import { UserPlus, FileText, Receipt, Lightbulb, ArrowRight, Clock, AlertTriangle, CheckCircle2, TrendingUp, ShieldAlert, AlertCircle, FileWarning, Activity, Globe } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { motion } from 'framer-motion';
 
 export function Dashboard() {
   const { profile, organization } = useAuth();
