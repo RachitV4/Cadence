@@ -47,6 +47,7 @@ export function InvoiceDetail() {
   const [promiseDate, setPromiseDate] = useState('');
   const [promiseNotes, setPromiseNotes] = useState('');
   const [savingPromise, setSavingPromise] = useState(false);
+  const [showSentOverlay, setShowSentOverlay] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!invoiceId || !organization) return;
@@ -294,6 +295,8 @@ export function InvoiceDetail() {
         origin: { y: 0.6 },
         colors: ['#3C493F', '#D64545', '#4C5FD5', '#B9770E']
       });
+      setShowSentOverlay(true);
+      setTimeout(() => setShowSentOverlay(false), 2000);
 
       if (user) {
         await supabase.from('notifications').insert({
@@ -607,13 +610,30 @@ export function InvoiceDetail() {
               )}
             </div>
             {emailThread.length > 0 && (
+              <div className="mb-4">
+                <h3 className="text-sm font-medium text-cadence-text mb-2">Email Thread History</h3>
+                <div className="space-y-2">
+                  {emailThread.map((email, idx) => (
+                    <div key={idx} className="p-3 rounded-lg bg-cadence-surface border border-cadence-border text-sm">
+                      <div className="flex justify-between text-xs text-cadence-muted mb-1">
+                        <span className="font-medium text-cadence-text">{email.from}</span>
+                        <span>{email.date}</span>
+                      </div>
+                      <p className="text-cadence-secondary whitespace-pre-wrap">{email.snippet || email.body}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {emailThread.length > 0 && (
               <div className="mb-4 flex items-center gap-2 p-2 bg-purple-500/5 border border-purple-500/10 rounded-lg">
                 <div className="flex -space-x-2">
                   <img src="https://api.dicebear.com/7.x/bottts/svg?seed=Legal" className="w-6 h-6 rounded-full border border-cadence-surface bg-cadence-surface" alt="Legal Agent" />
                   <img src="https://api.dicebear.com/7.x/bottts/svg?seed=Comms" className="w-6 h-6 rounded-full border border-cadence-surface bg-cadence-surface" alt="Comms Agent" />
                   <img src="https://api.dicebear.com/7.x/bottts/svg?seed=Coordinator" className="w-6 h-6 rounded-full border border-cadence-surface bg-cadence-surface" alt="Coordinator" />
                 </div>
-                <span className="text-xs text-purple-600/80 font-medium">Multi-Agent team collaborated on this draft.</span>
+                <span className="text-xs text-purple-600/80 font-medium">Multi-Agent team analyzed thread context for this draft.</span>
               </div>
             )}
             <div className="rounded-xl border border-cadence-border bg-white shadow-sm overflow-hidden">
@@ -729,12 +749,7 @@ export function InvoiceDetail() {
                 </button>
               )}
             </div>
-            {draft.status === 'sent' && (
-              <div className="mt-3 rounded-lg bg-cadence-successSoft p-3 flex items-center gap-2">
-                <Shield className="w-4 h-4 text-cadence-success" />
-                <p className="text-xs text-cadence-success">Sent in demo mode. No real email was delivered.</p>
-              </div>
-            )}
+
           </div>
         ) : analysis ? (
           <div className="card p-5">
@@ -813,6 +828,14 @@ export function InvoiceDetail() {
           </div>
         </div>
       </Modal>
+
+      {showSentOverlay && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm transition-all duration-300">
+          <div className="animate-in zoom-in-50 duration-500 fade-in text-8xl font-black text-white drop-shadow-2xl font-display tracking-tighter mix-blend-overlay">
+            SENT!
+          </div>
+        </div>
+      )}
     </div>
   );
 }

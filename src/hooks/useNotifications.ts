@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
 import type { Notification } from '@/types';
 
 export function useNotifications() {
@@ -8,6 +9,8 @@ export function useNotifications() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
+
+  const { showToast } = useToast();
 
   const fetchNotifications = useCallback(async () => {
     if (!user || !organization) return;
@@ -24,7 +27,18 @@ export function useNotifications() {
 
   useEffect(() => {
     fetchNotifications();
-  }, [fetchNotifications]);
+    
+    if (!user) return;
+    const sub = supabase.channel('notifs')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, (payload) => {
+        fetchNotifications();
+        const newNotif = payload.new as Notification;
+        showToast(newNotif.body || newNotif.title, newNotif.type === 'error' ? 'error' : 'success');
+      })
+      .subscribe();
+      
+    return () => { sub.unsubscribe(); };
+  }, [fetchNotifications, user, showToast]);
 
   const markAsRead = useCallback(async (id: string) => {
     await supabase.from('notifications').update({ read: true }).eq('id', id);

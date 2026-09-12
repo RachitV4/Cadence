@@ -54,7 +54,16 @@ export function AppLayout() {
 
   useEffect(() => {
     fetchClients();
-  }, [fetchClients]);
+    
+    if (!organization) return;
+    const sub = supabase.channel('clients-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'clients', filter: `organization_id=eq.${organization.id}` }, () => {
+        fetchClients();
+      })
+      .subscribe();
+      
+    return () => { sub.unsubscribe(); };
+  }, [fetchClients, organization]);
 
   useEffect(() => {
     setSidebarOpen(false);
