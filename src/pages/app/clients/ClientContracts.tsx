@@ -226,7 +226,7 @@ export function ClientContracts() {
       await fetchData();
 
       const allText = pageRecords.map((p) => p.text_content).join('\n\n');
-      const analysisText = allText.slice(0, 10_000);
+      const analysisText = allText.slice(0, 45_000); // Allow up to ~11k tokens to cover standard lengthy contracts
       const chunkSize = 4000;
       const chunks: { chunk_index: number; page_start: number; page_end: number; section: string; text: string }[] = [];
       let chunkIndex = 0;
