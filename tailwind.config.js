@@ -5,22 +5,22 @@ export default {
     extend: {
       colors: {
         cadence: {
-          bg: '#18181B',           // Matte Charcoal (Zinc 900)
-          surface: '#27272A',      // Elevated Charcoal (Zinc 800)
-          surface2: '#3F3F46',     // Hover states (Zinc 700)
-          border: '#3F3F46',       // Subtle dividing lines
-          text: '#F4F4F5',         // Soft Off-White (Zinc 100)
-          secondary: '#A1A1AA',    // Ash Gray (Zinc 400)
-          muted: '#71717A',        // Muted Gray (Zinc 500)
-          accent: '#10B981',       // Clean Emerald Green (Accent)
-          accentSoft: '#064E3B',   // Deep Emerald for backgrounds
-          accentLine: '#059669',   // Mid Emerald
-          danger: '#EF4444',
-          dangerSoft: '#450A0A',
-          warning: '#F59E0B',
-          warningSoft: '#451A03',
-          success: '#10B981',
-          successSoft: '#064E3B',
+          bg: '#FBFAF9',
+          surface: '#FFFFFF',
+          surface2: '#F5F5F2',
+          border: '#E7E7E2',
+          text: '#16181D',
+          secondary: '#565B66',
+          muted: '#8A909C',
+          accent: '#4C5FD5',
+          accentSoft: '#EEF0FC',
+          accentLine: '#C7CEF4',
+          danger: '#D64545',
+          dangerSoft: '#FCEEEE',
+          warning: '#B9770E',
+          warningSoft: '#FAF1E1',
+          success: '#2E9E5B',
+          successSoft: '#E9F6EE',
         },
       },
       fontFamily: {
