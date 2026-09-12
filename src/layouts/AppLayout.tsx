@@ -100,7 +100,7 @@ export function AppLayout() {
       >
         <div className="flex items-center justify-between px-5 h-16 border-b border-cadence-border">
           <Link to="/dashboard" className="flex items-center gap-2">
-            <img src="/logo.png" alt="Cadence Logo" className="w-8 h-auto object-contain" />
+            <img src="/logo.png" alt="Cadence Logo" className="max-h-8 w-auto object-contain" />
           </Link>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-cadence-muted">
             <X className="w-5 h-5" />
@@ -185,7 +185,7 @@ export function AppLayout() {
 
       {/* Main */}
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="sticky top-0 z-20 bg-cadence-bg/80 backdrop-blur-sm border-b border-cadence-border h-16 flex items-center justify-between px-4 sm:px-6">
+        <header className="sticky top-0 z-20 bg-cadence-surface border-b border-cadence-border h-16 flex items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-3">
             <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-cadence-text">
               <Menu className="w-5 h-5" />
