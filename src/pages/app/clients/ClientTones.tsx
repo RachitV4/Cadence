@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { logActivity } from '@/lib/utils';
+import { getToneAnchor, normalizeToneLevel, TONE_ANCHORS, toneLevelFromKey } from '@/lib/toneSimulator';
 import { LoadingState, Breadcrumbs } from '@/components/ui/Primitives';
 import { TONES, type ToneKey } from '@/types';
 import { Check, MessageSquare, Lightbulb, Copy, Edit2, Send, Loader2, Play } from 'lucide-react';
@@ -17,7 +18,7 @@ export function ClientTones() {
   const [tone, setTone] = useState<ClientTone | null>(null);
   const [drafts, setDrafts] = useState<EmailDraft[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<ToneKey>('casual_friendly');
+  const [selectedLevel, setSelectedLevel] = useState(25);
   
   const [editingDraft, setEditingDraft] = useState<string | null>(null);
   const [editBody, setEditBody] = useState('');
@@ -36,23 +37,31 @@ export function ClientTones() {
     setClient(clientRes.data as Client | null);
     setTone(toneRes.data as ClientTone | null);
     setDrafts((draftsRes.data as EmailDraft[]) || []);
-    if (toneRes.data) setSelected((toneRes.data as ClientTone).selected_tone as ToneKey);
+    if (toneRes.data) {
+      const savedTone = toneRes.data as ClientTone;
+      setSelectedLevel(savedTone.selected_tone_level ?? toneLevelFromKey(savedTone.selected_tone as ToneKey));
+    } else {
+      setSelectedLevel(25);
+    }
     setLoading(false);
   }, [clientId, organization]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const saveTone = async (toneKey: ToneKey) => {
+  const saveTone = async () => {
     if (!clientId || !organization || !client) return;
-    setSelected(toneKey);
-    if (tone) {
-      await supabase.from('client_tones').update({ selected_tone: toneKey }).eq('id', tone.id);
-    } else {
-      await supabase.from('client_tones').insert({ client_id: clientId, organization_id: organization.id, selected_tone: toneKey });
+    try {
+      const anchor = getToneAnchor(selectedLevel);
+      const { error } = tone
+        ? await supabase.from('client_tones').update({ selected_tone: anchor.key, selected_tone_level: selectedLevel }).eq('id', tone.id)
+        : await supabase.from('client_tones').insert({ client_id: clientId, organization_id: organization.id, selected_tone: anchor.key, selected_tone_level: selectedLevel });
+      if (error) throw error;
+      await logActivity(organization.id, 'tone_selected', 'Tone selected', `Tone baseline set to ${anchor.label} (${selectedLevel}/100).`, { client_id: clientId });
+      showToast('Tone saved.', 'success');
+      await fetchData();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not save tone.', 'error');
     }
-    await logActivity(organization.id, 'tone_selected', 'Tone selected', `Tone set to ${TONES.find((t) => t.key === toneKey)?.name}.`, { client_id: clientId });
-    showToast('Tone saved.', 'success');
-    await fetchData();
   };
 
   const copyToClipboard = (text: string) => {
@@ -158,31 +167,27 @@ export function ClientTones() {
         </div>
       )}
 
-      <div className="space-y-3 mb-10">
-        {TONES.map((toneDef) => (
-          <button
-            key={toneDef.key}
-            onClick={() => saveTone(toneDef.key)}
-            className={`w-full card p-4 text-left transition-all ${selected === toneDef.key ? 'ring-2 ring-cadence-accent border-cadence-accent' : 'hover:border-cadence-accent'}`}
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex items-start gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${selected === toneDef.key ? 'bg-cadence-accent' : 'bg-cadence-surface2'}`}>
-                  <MessageSquare className={`w-5 h-5 ${selected === toneDef.key ? 'text-white' : 'text-cadence-muted'}`} />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-cadence-text">{toneDef.name}</p>
-                  <p className="text-xs text-cadence-muted mt-1 leading-relaxed">{toneDef.description}</p>
-                </div>
-              </div>
-              {selected === toneDef.key && (
-                <div className="w-6 h-6 rounded-full bg-cadence-accent flex items-center justify-center shrink-0">
-                  <Check className="w-4 h-4 text-white" />
-                </div>
-              )}
-            </div>
-          </button>
-        ))}
+      <div className="card p-5 mb-10">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <div>
+            <p className="text-sm font-medium text-cadence-text">{getToneAnchor(selectedLevel).label}</p>
+            <p className="text-xs text-cadence-muted mt-1">Client baseline · {selectedLevel}/100</p>
+          </div>
+          <button onClick={saveTone} className="btn-primary text-xs">Save tone</button>
+        </div>
+        <input
+          aria-label="Client communication tone"
+          className="w-full accent-cadence-accent"
+          type="range"
+          min="0"
+          max="100"
+          value={selectedLevel}
+          onChange={(event) => setSelectedLevel(normalizeToneLevel(Number(event.target.value)))}
+        />
+        <div className="mt-2 flex justify-between text-2xs text-cadence-muted">
+          {TONE_ANCHORS.map((anchor) => <span key={anchor.level} title={anchor.label}>{anchor.level}</span>)}
+        </div>
+        {getToneAnchor(selectedLevel).key === 'modest' && <p className="mt-3 text-xs text-cadence-muted">Modest sits between Friendly and Formal at 40/100.</p>}
       </div>
 
       <div className="mb-10">
@@ -290,7 +295,7 @@ export function ClientTones() {
             {drafts.map((draft) => (
               <div key={draft.id}>
                 <p className="text-xs font-mono uppercase tracking-widest text-cadence-muted mb-2 block">
-                  Drafted email <span className="normal-case text-cadence-secondary ml-1">· tone: {TONES.find(t => t.key === draft.tone)?.name || draft.tone}</span>
+                  Drafted email <span className="normal-case text-cadence-secondary ml-1">· tone: {getToneAnchor(draft.tone_level).label} · {draft.tone_level}/100</span>
                 </p>
                 <div className="bg-cadence-surface2 border border-cadence-border rounded-xl p-4">
                   <p className="text-sm mb-3 text-cadence-text">

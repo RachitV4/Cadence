@@ -192,6 +192,9 @@ export interface ClientTone {
   client_id: string;
   organization_id: string;
   selected_tone: string;
+  selected_tone_level: number;
+  average_tone_level: number;
+  tone_sample_count: number;
   created_at: string;
   updated_at: string;
 }
@@ -204,7 +207,9 @@ export interface EmailDraft {
   subject: string;
   body: string;
   tone: string;
+  tone_level: number;
   tone_reason: string;
+  preservation_warnings: string[];
   status: string;
   sent_at: string | null;
   created_at: string;

@@ -11,6 +11,10 @@ import { UserPlus, FileText, Receipt, Lightbulb, ArrowRight, Clock, AlertTriangl
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { motion } from 'framer-motion';
 
+type HighRiskFinding = ContractFinding & {
+  contract?: { file_name?: string; client?: { name?: string } };
+};
+
 export function Dashboard() {
   const { profile, organization } = useAuth();
   const { showToast } = useToast();
@@ -20,7 +24,7 @@ export function Dashboard() {
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [activities, setActivities] = useState<ActivityEvent[]>([]);
   const [drafts, setDrafts] = useState<EmailDraft[]>([]);
-  const [highRiskFindings, setHighRiskFindings] = useState<any[]>([]);
+  const [highRiskFindings, setHighRiskFindings] = useState<HighRiskFinding[]>([]);
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
   const [isSimulating, setIsSimulating] = useState(false);
 
@@ -45,7 +49,7 @@ export function Dashboard() {
     setContracts((contractsRes.data as Contract[]) || []);
     setActivities((activitiesRes.data as ActivityEvent[]) || []);
     setDrafts((draftsRes.data as EmailDraft[]) || []);
-    setHighRiskFindings(findingsRes.data || []);
+    setHighRiskFindings((findingsRes.data as HighRiskFinding[]) || []);
     setLoading(false);
   }, [organization]);
 
@@ -282,7 +286,11 @@ export function Dashboard() {
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#3f3f46" opacity={0.2} />
                       <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#71717a', fontSize: 12 }} dy={10} />
                       <YAxis axisLine={false} tickLine={false} tick={{ fill: '#71717a', fontSize: 12 }} tickFormatter={(value) => `$${(value/1000)}k`} dx={-10} />
-                      <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }} formatter={(value: number) => [formatCurrency(value), 'Amount']} />
+                      <Tooltip 
+                        cursor={{ fill: 'transparent' }} 
+                        contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }} 
+                        formatter={(value) => [formatCurrency(Number(Array.isArray(value) ? value[0] : value ?? 0)), 'Amount'] as [string, string]} 
+                      />
                       <Bar dataKey="amount" radius={[6, 6, 0, 0]} maxBarSize={40}>
                         {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                       </Bar>
@@ -303,7 +311,11 @@ export function Dashboard() {
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#3f3f46" opacity={0.2} />
                       <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#71717a', fontSize: 12 }} dy={10} />
                       <YAxis axisLine={false} tickLine={false} tick={{ fill: '#71717a', fontSize: 12 }} tickFormatter={(value) => `$${(value/1000)}k`} dx={-10} />
-                      <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }} formatter={(value: number) => [formatCurrency(value), 'Amount']} />
+                      <Tooltip 
+                        cursor={{ fill: 'transparent' }} 
+                        contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }} 
+                        formatter={(value) => [formatCurrency(Number(Array.isArray(value) ? value[0] : value ?? 0)), 'Amount'] as [string, string]} 
+                      />
                       <Bar dataKey="amount" radius={[6, 6, 0, 0]} maxBarSize={40}>
                         {riskChartData.map((entry, index) => <Cell key={`risk-cell-${index}`} fill={entry.color} />)}
                       </Bar>

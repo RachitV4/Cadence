@@ -4,13 +4,15 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { logActivity, formatCurrency, formatDate, getInvoiceDueStatus, getInvoiceAge } from '@/lib/utils';
+import { getSmartAlerts } from '@/lib/smartAlerts';
+import { getToneAnchor, normalizeToneLevel, TONE_ANCHORS, toneLevelFromKey } from '@/lib/toneSimulator';
 import { LoadingState, ErrorState, Breadcrumbs, StatusBadge } from '@/components/ui/Primitives';
 import { Modal } from '@/components/ui/Modal';
-import type { Invoice, Client, Contract, ContractTerm, InvoiceAnalysis, EmailDraft, PaymentEvent } from '@/types';
-import { TONES, type ToneKey } from '@/types';
+import type { Invoice, Client, Contract, ContractTerm, InvoiceAnalysis, EmailDraft, PaymentEvent, PaymentPromise } from '@/types';
+import type { ToneKey } from '@/types';
 import {
   FileText, Receipt, Brain, Lightbulb, Mail, Copy, Edit, Send,
-  Loader2, Check, Shield, Sparkles, Save,
+  Loader2, Check, Shield, Sparkles, Save, AlertTriangle,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -31,6 +33,7 @@ export function InvoiceDetail() {
   const [analysis, setAnalysis] = useState<InvoiceAnalysis | null>(null);
   const [draft, setDraft] = useState<EmailDraft | null>(null);
   const [paymentHistory, setPaymentHistory] = useState<PaymentEvent[]>([]);
+  const [paymentPromise, setPaymentPromise] = useState<PaymentPromise | null>(null);
   const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
 
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -38,6 +41,12 @@ export function InvoiceDetail() {
   const [editBody, setEditBody] = useState('');
   const [selectedTone, setSelectedTone] = useState<ToneKey>('casual_friendly');
   const [emailThread, setEmailThread] = useState<any[]>([]);
+  const [toneLevel, setToneLevel] = useState(25);
+  const [recommendedToneLevel, setRecommendedToneLevel] = useState(25);
+  const [promiseModalOpen, setPromiseModalOpen] = useState(false);
+  const [promiseDate, setPromiseDate] = useState('');
+  const [promiseNotes, setPromiseNotes] = useState('');
+  const [savingPromise, setSavingPromise] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!invoiceId || !organization) return;
@@ -45,18 +54,20 @@ export function InvoiceDetail() {
     if (!inv) { setLoading(false); return; }
     setInvoice(inv as Invoice);
 
-    const [clientRes, analysisRes, draftRes, historyRes, allInvRes] = await Promise.all([
+    const [clientRes, analysisRes, draftRes, historyRes, allInvRes, promiseRes] = await Promise.all([
       supabase.from('clients').select('*').eq('id', inv.client_id).maybeSingle(),
       supabase.from('invoice_analysis').select('*').eq('invoice_id', inv.id).maybeSingle(),
       supabase.from('email_drafts').select('*').eq('invoice_id', inv.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('payment_events').select('*').eq('client_id', inv.client_id).order('created_at', { ascending: false }),
       supabase.from('invoices').select('*').eq('client_id', inv.client_id).order('created_at', { ascending: true }),
+      supabase.from('payment_promises').select('*').eq('invoice_id', inv.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
     ]);
     setClient(clientRes.data as Client | null);
     setAnalysis(analysisRes.data as InvoiceAnalysis | null);
     setDraft(draftRes.data as EmailDraft | null);
     setPaymentHistory((historyRes.data as PaymentEvent[]) || []);
     setAllInvoices((allInvRes.data as Invoice[]) || []);
+    setPaymentPromise(promiseRes.data as PaymentPromise | null);
 
     // Aggregate all contracts for the client to build the Knowledge Graph & MSA/SOW Hierarchy
     const { data: contractData } = await supabase.from('contracts').select('*').eq('client_id', inv.client_id).order('created_at', { ascending: true });
@@ -68,16 +79,21 @@ export function InvoiceDetail() {
       setTerms((termsData as ContractTerm[]) || []);
     }
 
-    // Load client tone
-    const { data: toneData } = await supabase.from('client_tones').select('*').eq('client_id', inv.client_id).maybeSingle();
-    if (toneData) setSelectedTone(toneData.selected_tone as ToneKey);
-
     setLoading(false);
   }, [invoiceId, organization]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const recommendedToneKey = analysis?.recommended_tone;
+
+  useEffect(() => {
+    if (!recommendedToneKey) return;
+    const level = toneLevelFromKey(recommendedToneKey as ToneKey);
+    setRecommendedToneLevel(level);
+    setToneLevel(level);
+  }, [analysis?.id, recommendedToneKey]);
 
   const generateAdvice = async () => {
     if (!invoice || !client || !organization) return;
@@ -141,7 +157,6 @@ export function InvoiceDetail() {
     setDrafting(true);
     setError('');
     try {
-      const toneToUse = selectedTone;
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-email`;
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -153,7 +168,7 @@ export function InvoiceDetail() {
           invoiceId: invoice.id,
           organizationId: organization.id,
           clientId: client.id,
-          tone: toneToUse,
+          toneLevel,
           clientName: client.name,
           clientEmail: client.contact_email,
           invoiceNumber: invoice.invoice_number,
@@ -164,7 +179,8 @@ export function InvoiceDetail() {
           contractTerms: terms.filter((t) => t.status === 'found').map((t) => ({ key: t.term_key, value: t.edited_value || t.term_value })),
           clientNotes: client.notes,
           isRepeat: client.is_repeat,
-          emailThread: optionalThread.length > 0 ? optionalThread : emailThread,
+          emailThread: optionalThread && optionalThread.length > 0 ? optionalThread : emailThread,
+          existingDraft: draft ? { subject: draft.subject, body: draft.body } : null,
         }),
       });
 
@@ -175,25 +191,53 @@ export function InvoiceDetail() {
 
       const result = await response.json();
 
-      const { data: newDraft } = await supabase
-        .from('email_drafts')
-        .insert({
-          invoice_id: invoice.id,
-          organization_id: organization.id,
-          client_id: client.id,
-          subject: result.subject || '',
-          body: result.body || '',
-          tone: toneToUse,
-          tone_reason: analysis.tone_reason || '',
-          status: 'draft',
-        })
-        .select()
-        .single();
+      const draftValues = {
+        subject: result.subject || '',
+        body: result.body || '',
+        tone: result.tone || getToneAnchor(toneLevel).key,
+        tone_level: result.tone_level ?? normalizeToneLevel(toneLevel),
+        tone_reason: analysis.tone_reason || '',
+        preservation_warnings: result.preservation_warnings || [],
+        status: 'draft',
+      };
+      const draftQuery = draft
+        ? supabase.from('email_drafts').update(draftValues).eq('id', draft.id)
+        : supabase.from('email_drafts').insert({
+            ...draftValues,
+            invoice_id: invoice.id,
+            organization_id: organization.id,
+            client_id: client.id,
+          });
+      const { data: savedDraft, error: draftError } = await draftQuery.select().single();
+      if (draftError) throw new Error(`Saving email draft failed: ${draftError.message}`);
 
-      await logActivity(organization.id, 'draft_created', 'Email draft created', `Draft created for ${invoice.invoice_number}.`, { client_id: client.id, invoice_id: invoice.id });
-      showToast('Email draft created.', 'success');
+      const { data: clientTone, error: clientToneReadError } = await supabase
+        .from('client_tones')
+        .select('selected_tone, selected_tone_level, average_tone_level, tone_sample_count')
+        .eq('client_id', client.id)
+        .maybeSingle();
+      if (clientToneReadError) throw new Error(`Loading client tone history failed: ${clientToneReadError.message}`);
+      const sampleCount = clientTone?.tone_sample_count || 0;
+      const averageTone = Number(clientTone?.average_tone_level ?? 50);
+      const nextToneLevel = normalizeToneLevel(toneLevel);
+      const nextSampleCount = draft && sampleCount > 0 ? sampleCount : sampleCount + 1;
+      const nextAverage = draft && sampleCount > 0
+        ? (averageTone * sampleCount - draft.tone_level + nextToneLevel) / sampleCount
+        : (averageTone * sampleCount + nextToneLevel) / nextSampleCount;
+      const { error: toneError } = await supabase.from('client_tones').upsert({
+        client_id: client.id,
+        organization_id: organization.id,
+        selected_tone: clientTone?.selected_tone || 'casual_friendly',
+        selected_tone_level: clientTone?.selected_tone_level ?? 25,
+        average_tone_level: nextAverage,
+        tone_sample_count: nextSampleCount,
+      }, { onConflict: 'client_id' });
+      if (toneError) throw new Error(`Saving client tone history failed: ${toneError.message}`);
+
+      await logActivity(organization.id, draft ? 'draft_regenerated' : 'draft_created', draft ? 'Email draft regenerated' : 'Email draft created', `Draft created for ${invoice.invoice_number}.`, { client_id: client.id, invoice_id: invoice.id });
+      showToast(draft ? 'Email draft regenerated.' : 'Email draft created.', 'success');
       setDrafting(false);
-      setDraft(newDraft as EmailDraft);
+      setDraft(savedDraft as EmailDraft);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to generate email';
       setError(message);
@@ -277,12 +321,48 @@ export function InvoiceDetail() {
     setEditModalOpen(true);
   };
 
+  const openPromiseModal = () => {
+    setPromiseDate(new Date().toISOString().slice(0, 10));
+    setPromiseNotes('');
+    setPromiseModalOpen(true);
+  };
+
+  const savePaymentPromise = async () => {
+    if (!invoice || !client || !organization || !promiseDate) return;
+    setSavingPromise(true);
+    try {
+      const { error: promiseError } = await supabase.from('payment_promises').insert({
+        invoice_id: invoice.id,
+        organization_id: organization.id,
+        client_id: client.id,
+        promised_date: promiseDate,
+        status: 'pending',
+        source: 'manual',
+        notes: promiseNotes.trim(),
+      });
+      if (promiseError) throw promiseError;
+
+      await logActivity(organization.id, 'payment_promise_recorded', 'Payment promise recorded', `Payment promised for ${formatDate(promiseDate)}.`, { client_id: client.id, invoice_id: invoice.id });
+      showToast('Payment promise recorded.', 'success');
+      setPromiseModalOpen(false);
+      await fetchData();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not record the payment promise';
+      showToast(message, 'error');
+    } finally {
+      setSavingPromise(false);
+    }
+  };
+
   if (loading) return <LoadingState message="Loading invoice..." />;
   if (!invoice || !client) return <ErrorState message="Invoice not found." />;
 
   const dueStatus = getInvoiceDueStatus(invoice.due_date, invoice.payment_status);
   const invoiceAge = getInvoiceAge(invoice.due_date);
   const previousInvoices = allInvoices.filter((i) => i.id !== invoice.id);
+  const smartAlerts = getSmartAlerts(invoice, paymentHistory, paymentPromise);
+  const selectedTone = getToneAnchor(toneLevel);
+  const recommendedTone = getToneAnchor(recommendedToneLevel);
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
@@ -361,6 +441,41 @@ export function InvoiceDetail() {
           </dl>
         </div>
 
+        {smartAlerts.map((alert) => (
+          <div key={alert.title} className={`card p-5 ${alert.severity === 'high' ? 'border-cadence-danger' : 'border-cadence-warning'}`}>
+            <div className="flex items-start gap-3">
+              <AlertTriangle className={`w-5 h-5 mt-0.5 shrink-0 ${alert.severity === 'high' ? 'text-cadence-danger' : 'text-cadence-warning'}`} />
+              <div>
+                <h2 className="text-sm font-medium text-cadence-text">{alert.title}</h2>
+                <p className="mt-1 text-sm text-cadence-secondary">{alert.message}</p>
+                <p className="mt-2 text-xs text-cadence-muted">{alert.recommendedAction}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+
+        <div className="card p-5">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <h2 className="text-sm font-medium text-cadence-text">Payment promise</h2>
+              <p className="text-xs text-cadence-muted mt-1">Record the date the client says payment will be made.</p>
+            </div>
+            {paymentPromise?.status === 'pending' ? (
+              <StatusBadge status={paymentPromise.status} />
+            ) : (
+              <button onClick={openPromiseModal} className="btn-secondary text-xs">Record promise</button>
+            )}
+          </div>
+          {paymentPromise ? (
+            <div className="rounded-lg bg-cadence-surface2 p-3 text-sm">
+              <p className="text-cadence-text">Promised for <span className="font-mono">{formatDate(paymentPromise.promised_date)}</span></p>
+              {paymentPromise.notes && <p className="mt-1 text-xs text-cadence-muted">{paymentPromise.notes}</p>}
+            </div>
+          ) : (
+            <button onClick={openPromiseModal} className="btn-secondary text-sm">Record promise</button>
+          )}
+        </div>
+
         {/* Cadence's advice */}
         {analysis ? (
           <div className="card p-5 ring-1 ring-cadence-accentLine">
@@ -411,7 +526,7 @@ export function InvoiceDetail() {
               <div>
                 <p className="text-xs font-mono uppercase tracking-wider text-cadence-muted mb-1">Recommended action</p>
                 <p className="text-sm font-medium text-cadence-text">{analysis.recommended_action}</p>
-                <p className="text-xs text-cadence-secondary mt-1">Recommended tone: {TONES.find((t) => t.key === analysis.recommended_tone)?.name || analysis.recommended_tone}</p>
+                <p className="text-xs text-cadence-secondary mt-1">Recommended tone: {getToneAnchor(toneLevelFromKey(analysis.recommended_tone as ToneKey)).label}</p>
               </div>
               <Lightbulb className="w-6 h-6 text-cadence-accent shrink-0" />
             </div>
@@ -430,34 +545,34 @@ export function InvoiceDetail() {
           </div>
         )}
 
-        {/* Tone selection */}
         {analysis && (
           <div className="card p-5">
             <div className="flex items-center gap-2 mb-4">
               <Mail className="w-4 h-4 text-cadence-accent" />
               <h2 className="text-sm font-medium text-cadence-text">Tone</h2>
-              {analysis.recommended_tone && (
-                <span className="text-xs text-cadence-muted">Cadence recommends: {TONES.find((t) => t.key === analysis.recommended_tone)?.name}</span>
-              )}
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {TONES.map((tone) => (
-                <button
-                  key={tone.key}
-                  onClick={() => setSelectedTone(tone.key)}
-                  className={`rounded-lg border p-3 text-left transition-all ${
-                    selectedTone === tone.key
-                      ? 'border-cadence-accent bg-cadence-accentSoft'
-                      : 'border-cadence-border hover:bg-cadence-surface2'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium text-cadence-text">{tone.name}</span>
-                    {analysis.recommended_tone === tone.key && <span className="badge-accent text-2xs">Recommended</span>}
-                  </div>
-                  <p className="text-xs text-cadence-muted leading-relaxed">{tone.description}</p>
-                </button>
-              ))}
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <p className="text-sm text-cadence-secondary">{selectedTone.label} <span className="font-mono">{toneLevel}/100</span></p>
+              <p className="text-xs text-cadence-muted">AI recommendation: {recommendedTone.label}</p>
+            </div>
+            <input
+              aria-label="Email tone"
+              className="w-full accent-cadence-accent"
+              type="range"
+              min="0"
+              max="100"
+              value={toneLevel}
+              onChange={(event) => setToneLevel(normalizeToneLevel(Number(event.target.value)))}
+            />
+            <div className="mt-2 flex justify-between text-2xs text-cadence-muted">
+              {TONE_ANCHORS.map((anchor) => <span key={anchor.level} title={anchor.label}>{anchor.level}</span>)}
+            </div>
+            <p className="mt-3 text-xs text-cadence-muted">
+              {toneLevel === recommendedToneLevel ? 'Using Cadence’s AI recommendation.' : 'You have overridden Cadence’s AI recommendation for this invoice.'}
+            </p>
+            {selectedTone.key === 'modest' && <p className="mt-1 text-xs text-cadence-muted">Modest sits between Friendly and Formal at 40/100.</p>}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button onClick={() => setToneLevel(recommendedToneLevel)} className="btn-secondary text-xs">Use AI recommendation</button>
             </div>
           </div>
         )}
@@ -476,8 +591,8 @@ export function InvoiceDetail() {
                   </span>
                 )}
               </div>
-              <div className="flex gap-2">
-                <span className="text-xs text-cadence-muted">Tone: {TONES.find((t) => t.key === draft.tone)?.name || draft.tone}</span>
+              <div className="flex gap-2 items-center">
+                <span className="text-xs text-cadence-muted">Tone: {draft.tone_level !== undefined ? getToneAnchor(draft.tone_level).label : draft.tone}</span>
                 {draft.status === 'sent' && <span className="badge-success"><Check className="w-3 h-3" /> Sent</span>}
               </div>
               {draft.status !== 'sent' && (
@@ -524,6 +639,14 @@ export function InvoiceDetail() {
                 </div>
               </div>
             </div>
+            {draft.preservation_warnings?.length > 0 && (
+              <div className="mt-3 rounded-lg bg-cadence-warningSoft p-3">
+                <p className="text-xs font-medium text-cadence-warning">Please verify these facts before sending:</p>
+                <ul className="mt-1 list-disc pl-4 text-xs text-cadence-secondary">
+                  {draft.preservation_warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                </ul>
+              </div>
+            )}
             <div className="flex flex-wrap gap-2 mt-4">
               <button onClick={handleCopy} className="btn-secondary"><Copy className="w-4 h-4" /> Copy</button>
               {draft.status !== 'sent' && (
@@ -668,6 +791,25 @@ export function InvoiceDetail() {
           <div className="flex gap-2">
             <button onClick={() => setEditModalOpen(false)} className="btn-secondary">Cancel</button>
             <button onClick={handleSaveDraft} className="btn-primary"><Save className="w-4 h-4" /> Save draft</button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={promiseModalOpen} onClose={() => setPromiseModalOpen(false)} title="Record payment promise">
+        <div className="space-y-4">
+          <div>
+            <label className="label">Promised payment date</label>
+            <input className="input" type="date" min={new Date().toISOString().slice(0, 10)} value={promiseDate} onChange={(e) => setPromiseDate(e.target.value)} />
+          </div>
+          <div>
+            <label className="label">Notes (optional)</label>
+            <textarea className="input min-h-24" value={promiseNotes} onChange={(e) => setPromiseNotes(e.target.value)} />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setPromiseModalOpen(false)} className="btn-secondary">Cancel</button>
+            <button onClick={savePaymentPromise} disabled={!promiseDate || savingPromise} className="btn-primary">
+              {savingPromise && <Loader2 className="w-4 h-4 animate-spin" />} Record promise
+            </button>
           </div>
         </div>
       </Modal>
