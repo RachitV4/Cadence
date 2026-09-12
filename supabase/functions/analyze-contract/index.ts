@@ -6,8 +6,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Info, Apikey',
 };
 
-const MAX_CONTRACT_TEXT_CHARS = 45_000;
-const NIM_TIMEOUT_MS = 60_000; // Increase timeout for larger text
+const MAX_CONTRACT_TEXT_CHARS = 25_000; // ~6000 tokens (leaving 2000 for system prompt + output)
+const NIM_TIMEOUT_MS = 60_000;
 const MAX_NIM_OUTPUT_TOKENS = 1_800;
 
 interface TermResult {
