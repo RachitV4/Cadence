@@ -217,7 +217,7 @@ export function ClientContracts() {
           source_text: t.source_text || '',
           confirmed: false,
         }));
-        if (!termRecords.some((term) => term.status === 'found' && term.term_value)) {
+        if (!termRecords.some((term: { status: string; term_value: string }) => term.status === 'found' && term.term_value)) {
           throw new Error('Analysis returned no extracted contract terms');
         }
         const { error: termInsertError } = await supabase.from('contract_terms').insert(termRecords);

@@ -6,9 +6,6 @@
 // coordinates are available, while preserving the current integration with the existing frontend.
 
 
-
-
-
 import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, FileText, Loader2 } from 'lucide-react';
 
