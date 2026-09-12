@@ -6,6 +6,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Info, Apikey',
 };
 
+const MAX_CONTRACT_TEXT_CHARS = 10_000;
+const NIM_TIMEOUT_MS = 40_000;
+const MAX_NIM_OUTPUT_TOKENS = 1_800;
+
 interface TermResult {
   key: string;
   value: string;
@@ -83,31 +87,43 @@ async function getNimConfig(supabase: ReturnType<typeof createClient>): Promise<
 
 async function callNim(prompt: string, text: string, supabase: ReturnType<typeof createClient>): Promise<string> {
   const { apiKey, apiUrl, model } = await getNimConfig(supabase);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), NIM_TIMEOUT_MS);
 
-  const res = await fetch(apiUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: prompt },
-        { role: 'user', content: text.slice(0, 28000) },
-      ],
-      temperature: 0.1,
-      max_tokens: 4096,
-    }),
-  });
+  try {
+    const res = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: prompt },
+          { role: 'user', content: text.slice(0, MAX_CONTRACT_TEXT_CHARS) },
+        ],
+        temperature: 0.1,
+        max_tokens: MAX_NIM_OUTPUT_TOKENS,
+      }),
+      signal: controller.signal,
+    });
 
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`NIM API error ${res.status}: ${errText.slice(0, 500)}`);
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`NIM API error ${res.status}: ${errText.slice(0, 500)}`);
+    }
+
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content ?? '';
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error('Contract analysis timed out while waiting for NVIDIA NIM. Please try again with a shorter contract section.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content ?? '';
 }
 
 Deno.serve(async (req: Request) => {
@@ -190,8 +206,8 @@ Return ONLY a valid JSON object with this exact structure:
 Rules:
 - For terms not found in the contract, use status "not_found", value "", confidence "low".
 - source_page should be the page number where the term was found (estimate if unsure, based on document order).
-- source_text should be a short exact quote from the contract supporting the extracted value.
-- Include 2-6 findings that highlight important clauses, risks, or unusual terms.
+- source_text should be a short exact quote from the contract supporting the extracted value (maximum 160 characters).
+- Include 2-3 findings that highlight the most important clauses, risks, or unusual terms.
 - Return ONLY the JSON, no markdown, no explanation.`;
 
     let terms: TermResult[] = [];

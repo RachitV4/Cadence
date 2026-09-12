@@ -189,6 +189,7 @@ export function ClientContracts() {
       await fetchData();
 
       const allText = pageRecords.map((p) => p.text_content).join('\n\n');
+      const analysisText = allText.slice(0, 10_000);
       const chunkSize = 4000;
       const chunks: { chunk_index: number; page_start: number; page_end: number; section: string; text: string }[] = [];
       let chunkIndex = 0;
@@ -219,7 +220,7 @@ export function ClientContracts() {
           'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ contractId, organizationId: organization!.id, text: allText.slice(0, 12000), pageCount }),
+        body: JSON.stringify({ contractId, organizationId: organization!.id, text: analysisText, pageCount }),
       });
 
       if (!response.ok) {
@@ -269,7 +270,12 @@ export function ClientContracts() {
 
       await supabase.from('contracts').update({ status: 'complete', processing_stage: 'complete' }).eq('id', contractId);
       await logActivity(organization!.id, 'contract_analyzed', 'Contract analyzed', `${pageCount} pages processed. Terms and findings extracted.`, { client_id: clientId!, contract_id: contractId });
-      showToast('Contract analysis complete.', 'success');
+      showToast(
+        allText.length > analysisText.length
+          ? 'Initial contract section analyzed. Additional sections remain available for a later pass.'
+          : 'Contract analysis complete.',
+        'success',
+      );
       setUploading(false);
       await fetchData();
     } catch (err) {
