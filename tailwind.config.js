@@ -5,22 +5,22 @@ export default {
     extend: {
       colors: {
         cadence: {
-          bg: '#F5F4F1',
-          surface: '#FCFCFA',
-          surface2: '#EBEAE5',
-          border: '#DFDDDA',
-          text: '#222220',
-          secondary: '#5C5C58',
-          muted: '#8F8E8A',
-          accent: '#3C493F', // A sophisticated deep neutral green/grey
-          accentSoft: '#E8EBE9',
-          accentLine: '#B4BCB6',
-          danger: '#B33A3A',
-          dangerSoft: '#F6E6E6',
-          warning: '#A67324',
-          warningSoft: '#F5EFE6',
-          success: '#3A7D4E',
-          successSoft: '#E6EFE8',
+          bg: '#0A1128',           // Deep Navy (Dominant)
+          surface: '#121A38',      // Slightly lighter Navy for cards
+          surface2: '#1C274C',     // Hover states / secondary surface
+          border: '#2D3A63',       // Subtle border color
+          text: '#F7F9FC',         // Soft Pearl White (Supporting)
+          secondary: '#CBD5E1',    // Light slate for secondary text
+          muted: '#64748B',        // Cool Slate (Muted Tone)
+          accent: '#7C3AED',       // Electric Lavender (Accent)
+          accentSoft: '#4C1D95',   // Deep Lavender for badge backgrounds
+          accentLine: '#6D28D9',   // Vibrant line accent
+          danger: '#EF4444',
+          dangerSoft: '#450A0A',
+          warning: '#F59E0B',
+          warningSoft: '#451A03',
+          success: '#10B981',
+          successSoft: '#064E3B',
         },
       },
       fontFamily: {
