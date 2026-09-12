@@ -24,8 +24,8 @@ export default {
         },
       },
       fontFamily: {
-        display: ['Lora', 'ui-serif', 'Georgia', 'serif'],
-        body: ['Lora', 'ui-serif', 'Georgia', 'serif'],
+        display: ['Space Grotesk', 'system-ui', 'sans-serif'],
+        body: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
       },
       fontSize: {
