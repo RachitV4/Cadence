@@ -5,16 +5,16 @@ export default {
     extend: {
       colors: {
         cadence: {
-          bg: '#0A1128',           // Deep Navy (Dominant)
-          surface: '#121A38',      // Slightly lighter Navy for cards
-          surface2: '#1C274C',     // Hover states / secondary surface
-          border: '#2D3A63',       // Subtle border color
-          text: '#F7F9FC',         // Soft Pearl White (Supporting)
-          secondary: '#CBD5E1',    // Light slate for secondary text
-          muted: '#64748B',        // Cool Slate (Muted Tone)
-          accent: '#7C3AED',       // Electric Lavender (Accent)
-          accentSoft: '#4C1D95',   // Deep Lavender for badge backgrounds
-          accentLine: '#6D28D9',   // Vibrant line accent
+          bg: '#18181B',           // Matte Charcoal (Zinc 900)
+          surface: '#27272A',      // Elevated Charcoal (Zinc 800)
+          surface2: '#3F3F46',     // Hover states (Zinc 700)
+          border: '#3F3F46',       // Subtle dividing lines
+          text: '#F4F4F5',         // Soft Off-White (Zinc 100)
+          secondary: '#A1A1AA',    // Ash Gray (Zinc 400)
+          muted: '#71717A',        // Muted Gray (Zinc 500)
+          accent: '#10B981',       // Clean Emerald Green (Accent)
+          accentSoft: '#064E3B',   // Deep Emerald for backgrounds
+          accentLine: '#059669',   // Mid Emerald
           danger: '#EF4444',
           dangerSoft: '#450A0A',
           warning: '#F59E0B',
