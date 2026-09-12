@@ -100,10 +100,7 @@ export function AppLayout() {
       >
         <div className="flex items-center justify-between px-5 h-16 border-b border-cadence-border">
           <Link to="/dashboard" className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-cadence-accent flex items-center justify-center">
-              <span className="font-display font-bold text-white text-xs">C</span>
-            </div>
-            <span className="font-display font-semibold text-cadence-text">Cadence</span>
+            <img src="/logo.png" alt="Cadence Logo" className="w-8 h-auto object-contain" />
           </Link>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-cadence-muted">
             <X className="w-5 h-5" />
