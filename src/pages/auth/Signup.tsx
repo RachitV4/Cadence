@@ -51,7 +51,7 @@ export function Signup() {
       <div className="flex-1 flex items-center justify-center px-4 py-8">
         <div className="w-full max-w-sm">
           <Link to="/" className="flex flex-col items-center mb-6">
-            <img src="/logo.png" alt="Cadence Logo" className="max-h-12 w-auto object-contain mb-4" />
+            <img src="/logo.png" alt="Cadence Logo" className="w-12 h-12 rounded-xl object-cover mb-4 shadow-sm" />
           </Link>
           <div className="card p-6">
             <h1 className="font-display text-xl font-semibold text-cadence-text mb-1">Create your account</h1>
