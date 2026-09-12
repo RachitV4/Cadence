@@ -11,13 +11,6 @@ interface InteractiveDocumentVisualizationProps {
   onPageChange: (page: number) => void;
 }
 
-interface HighlightRect {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}
-
 interface PdfTextItem {
   str?: unknown;
   transform?: number[];
@@ -46,8 +39,9 @@ export function InteractiveDocumentVisualization({
   const [loadedPages, setLoadedPages] = useState(pageCount || 1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [highlightActive, setHighlightActive] = useState(false);
+  const [renderVersion, setRenderVersion] = useState(0);
   const highlightTimeoutRef = useRef<number | undefined>(undefined);
+  const highlightedSourceRef = useRef('');
 
   const isPdf = fileName.toLowerCase().endsWith('.pdf');
 
@@ -142,61 +136,57 @@ export function InteractiveDocumentVisualization({
         await task.promise;
 
         window.clearTimeout(highlightTimeoutRef.current);
-        const sourceToHighlight = sourceText?.trim() || '';
-        if (!sourceToHighlight) return;
+        try {
+          const sourceToHighlight = sourceText?.trim() || '';
+          if (!sourceToHighlight) return;
 
-        const textContent = await page.getTextContent();
-        const entries = (textContent.items as PdfTextItem[])
-          .map((item) => ({
-            item,
-            text: typeof item.str === 'string' ? normalizeForMatch(item.str) : '',
-          }))
-          .filter(({ text, item }) => text && item.transform && item.transform.length >= 6);
-        const query = normalizeForMatch(sourceToHighlight);
-        const combinedText = entries.map(({ text }) => text).join(' ');
-        const matchStart = combinedText.indexOf(query);
-        const matchEnd = matchStart + query.length;
-        const distinctiveWords = new Set(
-          query.split(/[^a-z0-9]+/).filter((word) => word.length >= 5),
-        );
-        let cursor = 0;
+          const textContent = await page.getTextContent();
+          const entries = (textContent.items as PdfTextItem[])
+            .map((item) => ({
+              item,
+              text: typeof item.str === 'string' ? normalizeForMatch(item.str) : '',
+            }))
+            .filter(({ text, item }) => text && item.transform && item.transform.length >= 6);
+          const query = normalizeForMatch(sourceToHighlight);
+          const combinedText = entries.map(({ text }) => text).join(' ');
+          const matchStart = combinedText.indexOf(query);
+          const matchEnd = matchStart + query.length;
+          const distinctiveWords = new Set(
+            query.split(/[^a-z0-9]+/).filter((word) => word.length >= 5),
+          );
+          let cursor = 0;
 
-        const matchedEntries = entries.filter(({ text }) => {
-          const start = cursor;
-          cursor += text.length + 1;
-          if (matchStart >= 0) return cursor > matchStart && start < matchEnd;
-          return text
-            .split(/[^a-z0-9]+/)
-            .some((word) => distinctiveWords.has(word));
-        });
+          const matchedEntries = entries.filter(({ text }) => {
+            const start = cursor;
+            cursor += text.length + 1;
+            if (matchStart >= 0) return cursor > matchStart && start < matchEnd;
+            return text
+              .split(/[^a-z0-9]+/)
+              .some((word) => distinctiveWords.has(word));
+          });
 
-        const rects = matchedEntries.map(({ item }) => {
-          const transform = item.transform!;
-          const [left, baseline] = viewport.convertToViewportPoint(transform[4], transform[5]);
-          const height = Math.max((item.height || Math.hypot(transform[2], transform[3])) * viewport.scale, 10);
-          const width = Math.max((item.width || 12) * viewport.scale, 12);
+        const sourceKey = `${activePage}:${sourceToHighlight}`;
+        const shouldHighlight = highlightedSourceRef.current !== sourceKey;
 
-          return {
-            left: (left / viewport.width) * 100,
-            top: (Math.max(0, baseline - height) / viewport.height) * 100,
-            width: (width / viewport.width) * 100,
-            height: (height / viewport.height) * 100,
-          };
-        });
-
-        if (highlightActive && rects.length) {
+        if (shouldHighlight && matchedEntries.length) {
+          highlightedSourceRef.current = sourceKey;
           context.save();
-          context.fillStyle = 'rgba(253, 224, 71, 0.62)';
-          rects.forEach((rect) => {
-            context.fillRect(
-              (rect.left / 100) * viewport.width,
-              (rect.top / 100) * viewport.height,
-              (rect.width / 100) * viewport.width,
-              (rect.height / 100) * viewport.height,
-            );
+            context.fillStyle = 'rgba(253, 224, 71, 0.62)';
+            matchedEntries.forEach(({ item }) => {
+              const transform = item.transform!;
+              const [left, baseline] = viewport.convertToViewportPoint(transform[4], transform[5]);
+              const height = Math.max((item.height || Math.hypot(transform[2], transform[3])) * viewport.scale, 10);
+              const width = Math.max((item.width || 12) * viewport.scale, 12);
+              context.fillRect(left, Math.max(0, baseline - height), width, height);
           });
           context.restore();
-          highlightTimeoutRef.current = window.setTimeout(() => setHighlightActive(false), 3_000);
+          highlightTimeoutRef.current = window.setTimeout(
+            () => setRenderVersion((version) => version + 1),
+            3_000,
+          );
+        }
+        } catch {
+          // Highlighting is optional; a source mismatch must never hide a rendered PDF page.
         }
       } catch (renderError: unknown) {
         if (!(renderError instanceof Error && renderError.name === 'RenderingCancelledException')) {
@@ -212,11 +202,10 @@ export function InteractiveDocumentVisualization({
     return () => {
       renderTask?.cancel();
     };
-  }, [pdf, activePage, loadedPages, sourceText, highlightActive]);
+  }, [pdf, activePage, loadedPages, sourceText, renderVersion]);
 
   useEffect(() => {
     if (sourceText?.trim()) {
-      setHighlightActive(true);
       viewerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }, [activePage, sourceText]);
