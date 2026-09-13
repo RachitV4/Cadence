@@ -7,7 +7,7 @@ import type { Client } from '@/types';
 import {
   LayoutDashboard, UserPlus, FileText, Receipt, MessageSquare,
   Activity, User, CreditCard, Settings, LogOut, Menu, X, Bell,
-  Search, ChevronRight,
+  Search, ChevronRight, Moon, Sun, Feather,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -21,6 +21,12 @@ export function AppLayout() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [clients, setClients] = useState<Client[]>([]);
+  const [theme, setTheme] = useState<'light' | 'dark' | 'parchment'>(() => (localStorage.getItem('cadence-theme') as any) || 'light');
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('cadence-theme', theme);
+  }, [theme]);
 
   const fetchClients = useCallback(async () => {
     if (!organization) return;
@@ -205,6 +211,19 @@ export function AppLayout() {
               <Search className="w-4 h-4" />
               <span className="hidden sm:inline">Search</span>
               <kbd className="hidden sm:inline text-xs font-mono bg-cadence-surface2 border border-cadence-border rounded px-1.5 py-0.5">⌘K</kbd>
+            </button>
+            <button
+              onClick={() => {
+                const themes = ['light', 'dark', 'parchment'];
+                const next = themes[(themes.indexOf(theme) + 1) % themes.length];
+                setTheme(next as any);
+              }}
+              className="p-2 text-cadence-secondary hover:text-cadence-text hover:bg-cadence-surface2 rounded-lg transition-colors"
+              title="Toggle theme"
+            >
+              {theme === 'light' && <Sun className="w-5 h-5" />}
+              {theme === 'dark' && <Moon className="w-5 h-5" />}
+              {theme === 'parchment' && <Feather className="w-5 h-5" />}
             </button>
             <Link to="/dashboard/notifications" className="relative text-cadence-secondary hover:text-cadence-text p-2 transition-colors">
               <Bell className="w-5 h-5" />

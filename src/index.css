@@ -9,10 +9,67 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+  :root, [data-theme="light"] {
+    --color-bg: 251 250 249;
+    --color-surface: 255 255 255;
+    --color-surface2: 245 245 242;
+    --color-border: 231 231 226;
+    --color-text: 22 24 29;
+    --color-secondary: 86 91 102;
+    --color-muted: 138 144 156;
+    --color-accent: 76 95 213;
+    --color-accentSoft: 238 240 252;
+    --color-accentLine: 199 206 244;
+    --color-danger: 214 69 69;
+    --color-dangerSoft: 252 238 238;
+    --color-warning: 185 119 14;
+    --color-warningSoft: 250 241 225;
+    --color-success: 46 158 91;
+    --color-successSoft: 233 246 238;
+  }
+
+  [data-theme="dark"] {
+    --color-bg: 17 17 17;
+    --color-surface: 26 26 26;
+    --color-surface2: 36 36 36;
+    --color-border: 51 51 51;
+    --color-text: 243 243 243;
+    --color-secondary: 163 163 163;
+    --color-muted: 115 115 115;
+    --color-accent: 229 229 229;
+    --color-accentSoft: 42 42 42;
+    --color-accentLine: 64 64 64;
+    --color-danger: 239 68 68;
+    --color-dangerSoft: 69 10 10;
+    --color-warning: 245 158 11;
+    --color-warningSoft: 69 26 3;
+    --color-success: 16 185 129;
+    --color-successSoft: 6 78 59;
+  }
+
+  [data-theme="parchment"] {
+    --color-bg: 245 244 238;
+    --color-surface: 252 252 250;
+    --color-surface2: 234 232 224;
+    --color-border: 223 220 210;
+    --color-text: 44 42 38;
+    --color-secondary: 101 98 90;
+    --color-muted: 150 147 138;
+    --color-accent: 169 104 65; /* Burnt terracotta */
+    --color-accentSoft: 242 234 228;
+    --color-accentLine: 208 167 146;
+    --color-danger: 181 66 66;
+    --color-dangerSoft: 244 226 226;
+    --color-warning: 164 117 37;
+    --color-warningSoft: 243 239 231;
+    --color-success: 60 123 80;
+    --color-successSoft: 229 239 232;
+  }
+
   body {
     font-family: 'Inter', system-ui, sans-serif;
-    background-color: #FBFAF9;
-    color: #16181D;
+    background-color: rgb(var(--color-bg));
+    color: rgb(var(--color-text));
   }
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Space Grotesk', system-ui, sans-serif;
@@ -70,14 +127,14 @@
 @layer utilities {
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: #E7E7E2 transparent;
+    scrollbar-color: 231 231 226 transparent;
   }
   .scrollbar-thin::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: #E7E7E2;
+    background-color: 231 231 226;
     border-radius: 3px;
   }
   .animate-fade-in {
