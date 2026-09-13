@@ -6,9 +6,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Info, Apikey',
 };
 
-const MAX_CONTRACT_TEXT_CHARS = 25_000; // ~6000 tokens (leaving 2000 for system prompt + output)
-const NIM_TIMEOUT_MS = 60_000;
-const MAX_NIM_OUTPUT_TOKENS = 1_800;
+const MAX_CONTRACT_TEXT_CHARS = 10_000; // Reduced for faster processing with reasoning models
+const NIM_TIMEOUT_MS = 90_000; // Increase timeout to 90s to give reasoning models more time
+const MAX_NIM_OUTPUT_TOKENS = 1_200;
 
 interface TermResult {
   key: string;
@@ -132,10 +132,6 @@ async function callNim(prompt: string, text: string, supabase: ReturnType<typeof
       return data.choices?.[0]?.message?.content ?? '';
     } catch (error) {
       if (controller.signal.aborted) {
-        if (attempt < maxRetries) {
-          console.warn(`NIM timeout (Attempt ${attempt + 1}/${maxRetries}). Retrying...`);
-          continue;
-        }
         throw new Error('Contract analysis timed out while waiting for NVIDIA NIM. Please try again with a shorter contract section.');
       }
       if (attempt < maxRetries && error.name !== 'Error') {
