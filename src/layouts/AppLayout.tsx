@@ -235,7 +235,7 @@ export function AppLayout() {
             </Link>
           </div>
         </header>
-        <main className="flex-1 overflow-y-auto relative">
+        <main className="flex-1 overflow-y-auto relative px-4 md:px-8 py-6">
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}

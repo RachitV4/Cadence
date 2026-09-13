@@ -85,7 +85,7 @@ export function ClientProfile() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
+    <div className="max-w-5xl mx-auto w-full pb-10">
       <Breadcrumbs items={[{ label: 'Dashboard', href: '/dashboard' }, { label: client.name }]} />
 
       <div className="flex items-start justify-between mb-6">

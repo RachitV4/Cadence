@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -6,16 +6,9 @@ import { useToast } from '@/contexts/ToastContext';
 import { logActivity } from '@/lib/utils';
 import { getToneAnchor, normalizeToneLevel, TONE_ANCHORS, toneLevelFromKey } from '@/lib/toneSimulator';
 import { LoadingState, Breadcrumbs } from '@/components/ui/Primitives';
-import type { ToneKey } from '@/types';
-import { Check, Lightbulb, Copy, Edit2, Send, Loader2, Play } from 'lucide-react';
+import { TONES, type ToneKey } from '@/types';
+import { Check, MessageSquare, Lightbulb, Copy, Edit2, Send, Loader2, Play } from 'lucide-react';
 import type { Client, ClientTone, EmailDraft } from '@/types';
-
-type GmailMessage = {
-  from?: string;
-  date?: string;
-  subject?: string;
-  snippet?: string;
-};
 
 export function ClientTones() {
   const { clientId } = useParams();
@@ -103,7 +96,7 @@ export function ClientTones() {
     setPlaygroundResult(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const toneName = getToneAnchor(selectedLevel).label;
+      const toneName = TONES.find(t => t.key === selected)?.name || 'professional';
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-draft`, {
         method: 'POST',
         headers: {
@@ -115,7 +108,7 @@ export function ClientTones() {
       if (!res.ok) throw new Error('Analysis failed');
       const data = await res.json();
       setPlaygroundResult(data);
-    } catch {
+    } catch (err) {
       showToast('Analysis failed', 'error');
     } finally {
       setIsAnalyzing(false);
@@ -123,15 +116,14 @@ export function ClientTones() {
   };
 
   const [isScraping, setIsScraping] = useState(false);
-  const handleScrapeEmails = async () => {
-    if (!client?.contact_email) {
-      showToast('Add a client email address before importing Gmail context.', 'error');
-      return;
-    }
-    setIsScraping(true);
+  const [realEmails, setRealEmails] = useState<any[]>([]);
+  const lastEmailCountRef = useRef(0);
+
+  const fetchRealEmails = async (silent = true) => {
+    if (!client) return;
+    if (!silent) setIsScraping(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      // Call scrape-gmail edge function
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scrape-gmail`, {
         method: 'POST',
         headers: {
@@ -139,31 +131,52 @@ export function ClientTones() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          clientEmail: client.contact_email,
+          clientEmail: client?.contact_email || 'client@example.com',
           providerToken: session?.provider_token,
         }),
       });
       if (!res.ok) throw new Error('Scraping failed');
-      const data = await res.json() as { emails?: GmailMessage[] };
-      if (data.emails?.length) {
-        const emailText = data.emails.map((email) => `From: ${email.from || 'Unknown'}\nDate: ${email.date || ''}\nSubject: ${email.subject || ''}\n\n${email.snippet || ''}`).join('\n\n---\n\n');
-        setPlaygroundInput((prev) => prev + (prev ? '\n\n' : '') + emailText);
-        showToast('Gmail messages imported as context.', 'success');
+      const data = await res.json();
+      if (data.emails && data.emails.length > 0) {
+        setRealEmails(data.emails);
+        
+        // Auto-draft if a NEW email arrives!
+        if (data.emails.length > lastEmailCountRef.current) {
+           if (lastEmailCountRef.current > 0) {
+             showToast('New email detected! Auto-drafting response...', 'success');
+           } else if (!silent) {
+             showToast('Gmail messages imported.', 'success');
+           }
+           lastEmailCountRef.current = data.emails.length;
+           
+           const emailText = data.emails.map((e: any) => `From: ${e.from}\nDate: ${e.date}\nSubject: ${e.subject}\n\n${e.snippet}`).join('\n\n---\n\n');
+           setPlaygroundInput(emailText);
+        }
       } else {
-        showToast('No relevant emails found.', 'success');
+        if (!silent) showToast('No relevant emails found.', 'success');
       }
-    } catch {
-      showToast('Failed to scrape Gmail', 'error');
+    } catch (err) {
+      if (!silent) showToast('Failed to scrape Gmail', 'error');
     } finally {
       setIsScraping(false);
     }
   };
 
+  useEffect(() => {
+    if (client) {
+      fetchRealEmails(true);
+      const interval = setInterval(() => {
+        fetchRealEmails(true);
+      }, 5000); // Poll every 5 seconds for the hackathon demo!
+      return () => clearInterval(interval);
+    }
+  }, [client]);
+
   if (loading) return <LoadingState />;
   if (!client) return <LoadingState />;
 
   return (
-    <div>
+    <div className="max-w-4xl mx-auto w-full pb-10">
       <Breadcrumbs items={[{ label: 'Dashboard', href: '/dashboard' }, { label: client.name, href: `/dashboard/client/${client.id}` }, { label: 'Tones' }]} />
       <h1 className="font-display text-2xl font-semibold text-cadence-text mb-2">Tones & Automations</h1>
       <p className="text-sm text-cadence-secondary mb-6">Choose how Cadence communicates with {client.name}. Cadence can also recommend a tone based on the relationship.</p>
@@ -238,6 +251,15 @@ export function ClientTones() {
                <span className="text-xs text-cadence-muted font-medium">Auto-Monitoring</span>
              </div>
           </div>
+          <div className="mb-4 space-y-4">
+             {realEmails.map((email, idx) => (
+                <div key={email.id || idx} className="bg-cadence-surface2 rounded-2xl rounded-tl-sm p-4 border border-cadence-border max-w-[85%]">
+                   <p className="text-xs font-medium text-cadence-text mb-1">{email.from} <span className="text-cadence-muted font-normal ml-2">{email.date}</span></p>
+                   <p className="text-sm text-cadence-text font-medium mb-1">{email.subject}</p>
+                   <p className="text-sm text-cadence-secondary whitespace-pre-wrap">{email.snippet}</p>
+                </div>
+             ))}
+          </div>
           <div className="mb-4">
              <p className="text-xs font-mono uppercase text-cadence-muted mb-2">Simulate Client Reply</p>
              <textarea
@@ -271,7 +293,7 @@ export function ClientTones() {
                 </div>
               </div>
               <div>
-                <h4 className="text-xs font-mono uppercase tracking-wider text-cadence-accent mb-2">Drafted Response ({getToneAnchor(selectedLevel).label})</h4>
+                <h4 className="text-xs font-mono uppercase tracking-wider text-cadence-accent mb-2">Drafted Response ({TONES.find(t => t.key === selected)?.name})</h4>
                 <div className="p-4 bg-cadence-surface2 rounded-lg border border-cadence-border text-sm text-cadence-text whitespace-pre-wrap relative group mb-3">
                   {playgroundResult.draft_response}
                   <button 
@@ -293,7 +315,7 @@ export function ClientTones() {
                           'Content-Type': 'application/json',
                         },
                         body: JSON.stringify({
-                          to: client.contact_email,
+                          to: client?.email || 'client@example.com',
                           subject: 'Following up',
                           body: playgroundResult.draft_response,
                           providerToken: session?.provider_token
@@ -301,13 +323,11 @@ export function ClientTones() {
                       });
                       if (!res.ok) throw new Error('Failed to send');
                       showToast('Email sent securely via Gmail!', 'success');
-                    } catch {
+                    } catch (e) {
                       showToast('Failed to send email. Check Gmail scopes.', 'error');
                     }
                   }} 
-                  disabled={!client.contact_email}
-                  title={!client.contact_email ? 'Add a client email address to send this draft.' : undefined}
-                  className="bg-cadence-accent text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-opacity-90 w-full justify-center disabled:cursor-not-allowed disabled:opacity-50"
+                  className="bg-cadence-accent text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-opacity-90 w-full justify-center"
                 >
                   <Send className="w-4 h-4" /> Send directly via Gmail
                 </button>
