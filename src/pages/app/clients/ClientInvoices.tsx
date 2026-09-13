@@ -7,7 +7,7 @@ import { logActivity, formatCurrency, formatDate, getInvoiceDueStatus } from '@/
 import { LoadingState, EmptyState, Breadcrumbs, ErrorState } from '@/components/ui/Primitives';
 import { Modal } from '@/components/ui/Modal';
 import type { Invoice, Contract } from '@/types';
-import { Upload, Receipt, Loader2, ArrowRight, Edit, Check, AlertTriangle, Clock } from 'lucide-react';
+import { Upload, Receipt, Loader2, ArrowRight, Edit, Check, AlertTriangle, Clock, Trash2 } from 'lucide-react';
 import * as mammoth from 'mammoth';
 import Tesseract from 'tesseract.js';
 
@@ -26,6 +26,8 @@ export function ClientInvoices() {
   const [editValues, setEditValues] = useState({ invoice_number: '', amount: '', due_date: '', issue_date: '', description: '' });
   const [error, setError] = useState('');
   const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [invoiceToDelete, setInvoiceToDelete] = useState<Invoice | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!clientId || !organization) return;
@@ -201,6 +203,41 @@ export function ClientInvoices() {
     });
   };
 
+  const deleteInvoice = async () => {
+    if (!invoiceToDelete || !clientId || !organization || deleting) return;
+    setDeleting(true);
+
+    const { error: deleteError } = await supabase
+      .from('invoices')
+      .delete()
+      .eq('id', invoiceToDelete.id)
+      .eq('client_id', clientId)
+      .eq('organization_id', organization.id);
+
+    if (deleteError) {
+      showToast(`Could not delete invoice. ${deleteError.message}`, 'error');
+      setDeleting(false);
+      return;
+    }
+
+    let cleanupFailed = false;
+    if (invoiceToDelete.file_path) {
+      const { error: storageError } = await supabase.storage
+        .from('invoices')
+        .remove([invoiceToDelete.file_path]);
+      cleanupFailed = !!storageError;
+    }
+
+    setFileUrl(null);
+    setInvoiceToDelete(null);
+    setDeleting(false);
+    await fetchData();
+    showToast(
+      cleanupFailed ? 'Invoice deleted, but its uploaded file could not be removed.' : 'Invoice deleted.',
+      cleanupFailed ? 'error' : 'success',
+    );
+  };
+
   if (loading) return <LoadingState message="Loading invoices..." />;
 
   return (
@@ -278,6 +315,14 @@ export function ClientInvoices() {
                       {inv.extraction_status === 'processing' ? 'Processing' : 'Needs confirmation'}
                     </span>
                   )}
+                  <button
+                    onClick={() => setInvoiceToDelete(inv)}
+                    className="rounded-lg p-2 text-cadence-muted transition-colors hover:bg-cadence-dangerSoft hover:text-cadence-danger"
+                    aria-label={`Delete ${inv.invoice_number || 'invoice'}`}
+                    title="Delete invoice"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             );
@@ -326,6 +371,22 @@ export function ClientInvoices() {
             </div>
           </div>
         )}
+      </Modal>
+
+      <Modal open={!!invoiceToDelete} onClose={() => !deleting && setInvoiceToDelete(null)} title="Delete invoice?">
+        <div className="space-y-4">
+          <p className="text-sm text-cadence-secondary">
+            This permanently deletes <strong className="text-cadence-text">{invoiceToDelete?.invoice_number || invoiceToDelete?.file_name || 'this invoice'}</strong>, including its analysis, payment history, promises, and email drafts.
+          </p>
+          <p className="text-sm font-medium text-cadence-danger">This action cannot be undone.</p>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setInvoiceToDelete(null)} className="btn-secondary" disabled={deleting}>Cancel</button>
+            <button onClick={deleteInvoice} className="btn-danger" disabled={deleting}>
+              {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              {deleting ? 'Deleting...' : 'Delete invoice'}
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

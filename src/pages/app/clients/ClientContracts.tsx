@@ -9,7 +9,7 @@ import { Modal } from '@/components/ui/Modal';
 import { InteractiveDocumentVisualization } from '@/components/InteractiveDocumentVisualization';
 import type { Contract, ContractTerm, ContractFinding, ContractPage } from '@/types';
 import { TERM_LABELS } from '@/types';
-import { Upload, FileText, Loader2, Check, Edit, Eye, AlertTriangle, X, ChevronDown } from 'lucide-react';
+import { Upload, FileText, Loader2, Check, Edit, Eye, AlertTriangle, X, ChevronDown, Trash2 } from 'lucide-react';
 
 export function ClientContracts() {
   const { clientId } = useParams();
@@ -28,6 +28,8 @@ export function ClientContracts() {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [activePage, setActivePage] = useState(1);
   const [sourceText, setSourceText] = useState('');
+  const [contractToDelete, setContractToDelete] = useState<Contract | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const latestContract = contracts[0];
 
   const fetchData = useCallback(async () => {
@@ -47,6 +49,11 @@ export function ClientContracts() {
       setTerms((termsRes.data as ContractTerm[]) || []);
       setFindings((findingsRes.data as ContractFinding[]) || []);
       setPages((pagesRes.data as ContractPage[]) || []);
+    } else {
+      setTerms([]);
+      setFindings([]);
+      setPages([]);
+      setFileUrl(null);
     }
     setLoading(false);
   }, [clientId, organization]);
@@ -318,6 +325,41 @@ export function ClientContracts() {
     });
   };
 
+  const deleteContract = async () => {
+    if (!contractToDelete || !clientId || !organization || deleting) return;
+    setDeleting(true);
+
+    const { error: deleteError } = await supabase
+      .from('contracts')
+      .delete()
+      .eq('id', contractToDelete.id)
+      .eq('client_id', clientId)
+      .eq('organization_id', organization.id);
+
+    if (deleteError) {
+      showToast(`Could not delete contract. ${deleteError.message}`, 'error');
+      setDeleting(false);
+      return;
+    }
+
+    let cleanupFailed = false;
+    if (contractToDelete.file_path) {
+      const { error: storageError } = await supabase.storage
+        .from('contracts')
+        .remove([contractToDelete.file_path]);
+      cleanupFailed = !!storageError;
+    }
+
+    if (latestContract?.id === contractToDelete.id) setFileUrl(null);
+    setContractToDelete(null);
+    setDeleting(false);
+    await fetchData();
+    showToast(
+      cleanupFailed ? 'Contract deleted, but its uploaded file could not be removed.' : 'Contract deleted.',
+      cleanupFailed ? 'error' : 'success',
+    );
+  };
+
   if (loading) return <LoadingState message="Loading contracts..." />;
 
   return (
@@ -399,6 +441,14 @@ export function ClientContracts() {
                   {contract.processing_stage && contract.status !== 'complete' && contract.status !== 'failed' && (
                     <span className="text-xs font-mono text-cadence-muted">{contract.processing_stage}</span>
                   )}
+                  <button
+                    onClick={() => setContractToDelete(contract)}
+                    className="rounded-lg p-2 text-cadence-muted transition-colors hover:bg-cadence-dangerSoft hover:text-cadence-danger"
+                    aria-label={`Delete ${contract.file_name}`}
+                    title="Delete contract"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
 
@@ -532,6 +582,22 @@ export function ClientContracts() {
           <div className="flex gap-2">
             <button onClick={() => setEditingTerm(null)} className="btn-secondary">Cancel</button>
             <button onClick={saveEditTerm} className="btn-primary">Save</button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={!!contractToDelete} onClose={() => !deleting && setContractToDelete(null)} title="Delete contract?">
+        <div className="space-y-4">
+          <p className="text-sm text-cadence-secondary">
+            This permanently deletes <strong className="text-cadence-text">{contractToDelete?.file_name}</strong> and all extracted terms, findings, and analysis data associated with it.
+          </p>
+          <p className="text-sm font-medium text-cadence-danger">This action cannot be undone.</p>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setContractToDelete(null)} className="btn-secondary" disabled={deleting}>Cancel</button>
+            <button onClick={deleteContract} className="btn-danger" disabled={deleting}>
+              {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              {deleting ? 'Deleting...' : 'Delete contract'}
+            </button>
           </div>
         </div>
       </Modal>
