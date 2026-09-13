@@ -25,7 +25,7 @@ export function PublicLayout() {
         <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-8">
             <Link to="/" className="flex items-center gap-2">
-              <img src="/logo.png" alt="Cadence Logo" className="w-8 h-8 rounded-lg object-cover" />
+              <img src="/logo.png" alt="Cadence Logo" className="h-10 w-auto object-contain rounded-md" />
             </Link>
             <div className="hidden md:flex items-center gap-1">
               {navItems.map((item) => (
@@ -127,7 +127,7 @@ export function PublicLayout() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             <div>
               <div className="flex items-center gap-2 mb-3">
-                <img src="/logo.png" alt="Cadence Logo" className="w-8 h-8 rounded-lg object-cover grayscale opacity-80" />
+                <img src="/logo.png" alt="Cadence Logo" className="h-10 w-auto object-contain rounded-md grayscale opacity-80" />
               </div>
               <p className="text-xs text-cadence-muted leading-relaxed">
                 AI commercial intelligence for service businesses.

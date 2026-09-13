@@ -100,7 +100,7 @@ export function AppLayout() {
       >
         <div className="flex items-center justify-between px-5 h-16 border-b border-cadence-border">
           <Link to="/dashboard" className="flex items-center gap-2">
-            <img src="/logo.png" alt="Cadence Logo" className="w-8 h-8 rounded-lg object-cover" />
+            <img src="/logo.png" alt="Cadence Logo" className="h-10 w-auto object-contain rounded-md" />
           </Link>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-cadence-muted">
             <X className="w-5 h-5" />
@@ -191,7 +191,7 @@ export function AppLayout() {
               <Menu className="w-5 h-5" />
             </button>
             <div className="flex items-center gap-2">
-              <img src="/logo.png" alt="Cadence Logo" className="w-6 h-6 rounded object-cover lg:hidden" />
+              <img src="/logo.png" alt="Cadence Logo" className="h-9 w-auto object-contain rounded-md lg:hidden" />
               {organization && (
                 <span className="text-sm font-mono text-cadence-muted hidden sm:block">{organization.name}</span>
               )}
