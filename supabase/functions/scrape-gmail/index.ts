@@ -47,7 +47,7 @@ serve(async (req) => {
 
     const emails = [];
     for (const msg of messages) {
-      const msgRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`, {
+      const msgRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date&metadataHeaders=Message-ID`, {
         headers: {
           Authorization: `Bearer ${providerToken}`,
         },
@@ -57,9 +57,12 @@ serve(async (req) => {
       const subjectHeader = msgData.payload.headers.find((h: any) => h.name === 'Subject');
       const fromHeader = msgData.payload.headers.find((h: any) => h.name === 'From');
       const dateHeader = msgData.payload.headers.find((h: any) => h.name === 'Date');
+      const messageIdHeader = msgData.payload.headers.find((h: any) => h.name === 'Message-ID' || h.name === 'Message-Id');
 
       emails.push({
         id: msg.id,
+        threadId: msgData.threadId,
+        messageId: messageIdHeader ? messageIdHeader.value : undefined,
         subject: subjectHeader ? subjectHeader.value : 'No Subject',
         snippet: msgData.snippet,
         from: fromHeader ? fromHeader.value : 'Unknown',

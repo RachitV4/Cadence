@@ -22,6 +22,8 @@ type EmailThreadMessage = {
   subject?: string;
   snippet?: string;
   body?: string;
+  threadId?: string;
+  messageId?: string;
 };
 
 export function InvoiceDetail() {
@@ -278,18 +280,27 @@ export function InvoiceDetail() {
       if (!session?.provider_token) {
         throw new Error('No Google OAuth provider_token found. Please log in with Google.');
       }
+      const payload: any = {
+        to: client?.contact_email || 'client@example.com',
+        subject: draft.subject,
+        body: draft.body,
+        providerToken: session?.provider_token
+      };
+      
+      if (emailThread && emailThread.length > 0) {
+        // Find the most recent message's threadId and messageId
+        const recentMsg = emailThread[0];
+        if (recentMsg.threadId) payload.threadId = recentMsg.threadId;
+        if (recentMsg.messageId) payload.inReplyTo = recentMsg.messageId;
+      }
+
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-gmail`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session?.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          to: client?.contact_email || 'client@example.com',
-          subject: draft.subject,
-          body: draft.body,
-          providerToken: session?.provider_token
-        }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error('Failed to send');
       

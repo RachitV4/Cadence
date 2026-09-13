@@ -11,7 +11,7 @@ serve(async (req) => {
   }
 
   try {
-    const { to, subject, body, providerToken } = await req.json();
+    const { to, subject, body, providerToken, threadId, inReplyTo } = await req.json();
 
     if (!providerToken) {
       throw new Error('Google OAuth providerToken is required to send via Gmail');
@@ -22,12 +22,23 @@ serve(async (req) => {
       'Content-Type: text/plain; charset=utf-8',
       'MIME-Version: 1.0',
       `Subject: ${subject}`,
-      '',
-      body,
     ];
+    
+    if (inReplyTo) {
+      messageParts.push(`In-Reply-To: ${inReplyTo}`);
+      messageParts.push(`References: ${inReplyTo}`);
+    }
+    
+    messageParts.push('');
+    messageParts.push(body);
 
     const message = messageParts.join('\n');
     const encodedMessage = btoa(unescape(encodeURIComponent(message))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    const payload: any = { raw: encodedMessage };
+    if (threadId) {
+      payload.threadId = threadId;
+    }
 
     const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
       method: 'POST',
@@ -35,9 +46,7 @@ serve(async (req) => {
         'Authorization': `Bearer ${providerToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        raw: encodedMessage,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!res.ok) {
