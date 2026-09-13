@@ -36,7 +36,18 @@ export function ClientTones() {
     ]);
     setClient(clientRes.data as Client | null);
     setTone(toneRes.data as ClientTone | null);
-    setDrafts((draftsRes.data as EmailDraft[]) || []);
+
+    // Filter duplicates by body
+    const uniqueDrafts: EmailDraft[] = [];
+    const seenBodies = new Set<string>();
+    for (const d of ((draftsRes.data as EmailDraft[]) || [])) {
+      if (!seenBodies.has(d.body)) {
+        seenBodies.add(d.body);
+        uniqueDrafts.push(d);
+      }
+    }
+    setDrafts(uniqueDrafts);
+
     if (toneRes.data) {
       const savedTone = toneRes.data as ClientTone;
       setSelectedLevel(savedTone.selected_tone_level ?? toneLevelFromKey(savedTone.selected_tone as ToneKey));
@@ -341,7 +352,7 @@ export function ClientTones() {
                       showToast('Failed to send email. Check Gmail scopes.', 'error');
                     }
                   }} 
-                  className="bg-cadence-accent text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-opacity-90 w-full justify-center"
+                  className="bg-cadence-accent text-cadence-accentFg px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-opacity-90 w-full justify-center"
                 >
                   <Send className="w-4 h-4" /> Send directly via Gmail
                 </button>
@@ -388,7 +399,7 @@ export function ClientTones() {
                     {editingDraft === draft.id ? (
                       <>
                         <button onClick={() => setEditingDraft(null)} className="px-3 py-1.5 text-sm font-medium rounded-lg border border-cadence-border bg-cadence-surface text-cadence-secondary hover:text-cadence-text">Cancel</button>
-                        <button onClick={() => saveEdit(draft)} className="px-3 py-1.5 text-sm font-medium rounded-lg bg-cadence-accent text-white hover:bg-cadence-accent/90">Save Edit</button>
+                        <button onClick={() => saveEdit(draft)} className="px-3 py-1.5 text-sm font-medium rounded-lg bg-cadence-accent text-cadence-accentFg hover:bg-cadence-accent/90">Save Edit</button>
                       </>
                     ) : (
                       <>
@@ -407,7 +418,7 @@ export function ClientTones() {
                           <button 
                             onClick={() => sendDraft(draft)} 
                             disabled={draft.status === 'sent'}
-                            className={`px-4 py-1.5 text-sm font-medium rounded-lg flex items-center gap-1.5 ${draft.status === 'sent' ? 'bg-cadence-surface2 text-cadence-muted cursor-not-allowed border border-cadence-border' : 'bg-cadence-accent text-white hover:bg-cadence-accent/90'}`}
+                            className={`px-4 py-1.5 text-sm font-medium rounded-lg flex items-center gap-1.5 ${draft.status === 'sent' ? 'bg-cadence-surface2 text-cadence-muted cursor-not-allowed border border-cadence-border' : 'bg-cadence-accent text-cadence-accentFg hover:bg-cadence-accent/90'}`}
                           >
                             <Send className="w-3.5 h-3.5" /> {draft.status === 'sent' ? 'Resend' : 'Send'}
                           </button>
