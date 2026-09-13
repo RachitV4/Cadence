@@ -49,12 +49,32 @@ export function Dashboard() {
         .limit(10)
     ]);
     
-    setClients((clientsRes.data as Client[]) || []);
-    setInvoices((invoicesRes.data as DashboardInvoice[]) || []);
-    setContracts((contractsRes.data as Contract[]) || []);
-    setActivities((activitiesRes.data as ActivityEvent[]) || []);
-    setDrafts((draftsRes.data as EmailDraft[]) || []);
-    setHighRiskFindings((findingsRes.data as HighRiskFinding[]) || []);
+    const allClients = (clientsRes.data as Client[]) || [];
+    const activeClients = allClients.filter(c => !(c.notes || '').startsWith('[ARCHIVED]'));
+    
+    setClients(activeClients);
+    setInvoices(((invoicesRes.data as DashboardInvoice[]) || []).filter(inv => {
+      const c = allClients.find(c => c.id === inv.client_id);
+      return c && !(c.notes || '').startsWith('[ARCHIVED]');
+    }));
+    setContracts(((contractsRes.data as Contract[]) || []).filter(con => {
+      const c = allClients.find(c => c.id === con.client_id);
+      return c && !(c.notes || '').startsWith('[ARCHIVED]');
+    }));
+    setActivities(((activitiesRes.data as ActivityEvent[]) || []).filter(act => {
+      const c = allClients.find(c => c.id === act.client_id);
+      return !c || !(c.notes || '').startsWith('[ARCHIVED]');
+    }));
+    setDrafts(((draftsRes.data as EmailDraft[]) || []).filter(draft => {
+      const c = allClients.find(c => c.id === draft.client_id);
+      return c && !(c.notes || '').startsWith('[ARCHIVED]');
+    }));
+    setHighRiskFindings(((findingsRes.data as HighRiskFinding[]) || []).filter(finding => {
+      // Find the contract, then the client
+      const con = (contractsRes.data as Contract[])?.find(c => c.id === finding.contract_id);
+      const c = con ? allClients.find(c => c.id === con.client_id) : null;
+      return !c || !(c.notes || '').startsWith('[ARCHIVED]');
+    }));
     setLoading(false);
   }, [organization]);
 

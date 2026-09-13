@@ -26,8 +26,11 @@ serve(async (req) => {
       .eq('organization_id', organizationId)
       .neq('payment_status', 'paid')
       .lt('due_date', today);
+      
+    // Filter out archived clients
+    const activeInvoices = (invoices || []).filter(inv => !(inv.clients?.notes || '').startsWith('[ARCHIVED]'));
 
-    if (!invoices || invoices.length === 0) {
+    if (!activeInvoices || activeInvoices.length === 0) {
       return new Response(JSON.stringify({ success: true, message: 'No overdue invoices found.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -39,7 +42,7 @@ serve(async (req) => {
       .select('id')
       .eq('organization_id', organizationId);
 
-    for (const inv of invoices) {
+    for (const inv of activeInvoices) {
       // Check if a draft was already created today
       const { data: existingDraft } = await supabase
         .from('email_drafts')
