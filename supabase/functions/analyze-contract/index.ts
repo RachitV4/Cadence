@@ -34,15 +34,20 @@ interface FindingResult {
 const TERM_KEYS = ['payment_terms', 'contract_value', 'late_fee', 'effective_date', 'expiration_date', 'termination', 'liability', 'ip', 'renewal', 'confidentiality', 'milestones'];
 
 function parseJsonResponse(response: string): { terms: TermResult[]; findings: FindingResult[] } {
-  const unfenced = response.replace(/```(?:json)?\s*/gi, '').trim();
-  const start = unfenced.indexOf('{');
-  const end = unfenced.lastIndexOf('}');
+  // Remove <thought> or <think> blocks typical of reasoning models
+  let cleaned = response.replace(/<(?:thought|think)>[\s\S]*?<\/(?:thought|think)>/gi, '');
+  
+  // Remove markdown fencing
+  cleaned = cleaned.replace(/```(?:json)?\s*/gi, '').replace(/```\s*/gi, '').trim();
+  
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
 
   if (start === -1 || end === -1 || end < start) {
     throw new Error('NIM returned no JSON object');
   }
 
-  const parsed = JSON.parse(unfenced.slice(start, end + 1));
+  const parsed = JSON.parse(cleaned.slice(start, end + 1));
   if (!Array.isArray(parsed.terms) || !Array.isArray(parsed.findings)) {
     throw new Error('NIM response does not match the contract extraction schema');
   }

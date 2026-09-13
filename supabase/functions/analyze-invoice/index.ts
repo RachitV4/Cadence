@@ -16,14 +16,16 @@ interface InvoiceExtraction {
 }
 
 function parseInvoiceResponse(response: string): InvoiceExtraction {
-  const unfenced = response.replace(/```(?:json)?\s*/gi, '').trim();
-  const start = unfenced.indexOf('{');
-  const end = unfenced.lastIndexOf('}');
+  let cleaned = response.replace(/<(?:thought|think)>[\s\S]*?<\/(?:thought|think)>/gi, '');
+  cleaned = cleaned.replace(/```(?:json)?\s*/gi, '').replace(/```\s*/gi, '').trim();
+  
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
   if (start === -1 || end === -1 || end < start) {
     throw new Error('NIM returned no JSON object');
   }
 
-  const parsed = JSON.parse(unfenced.slice(start, end + 1));
+  const parsed = JSON.parse(cleaned.slice(start, end + 1));
   const amount = Number(parsed.amount);
   const extracted: InvoiceExtraction = {
     invoice_number: typeof parsed.invoice_number === 'string' ? parsed.invoice_number.trim() : '',

@@ -187,8 +187,15 @@ Rules:
 
     try {
       const aiResponse = await callNim(prompt, supabase);
-      const cleaned = aiResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      const parsed = JSON.parse(cleaned);
+      let cleaned = aiResponse.replace(/<(?:thought|think)>[\s\S]*?<\/(?:thought|think)>/gi, '');
+      cleaned = cleaned.replace(/```(?:json)?\s*/gi, '').replace(/```\s*/gi, '').trim();
+      
+      const start = cleaned.indexOf('{');
+      const end = cleaned.lastIndexOf('}');
+      if (start === -1 || end === -1 || end < start) {
+        throw new Error('NIM returned no JSON object');
+      }
+      const parsed = JSON.parse(cleaned.slice(start, end + 1));
       result = {
         risk_level: parsed.risk_level || 'low',
         recommendation: parsed.recommendation || '',
