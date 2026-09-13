@@ -235,7 +235,7 @@ export function ClientTones() {
             <h2 className="font-display text-xl font-semibold text-cadence-text">Interactive Draft Playground</h2>
           </div>
           <button 
-            onClick={handleScrapeEmails}
+            onClick={() => fetchRealEmails(false)}
             disabled={isScraping}
             className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-2 border-cadence-border"
           >
