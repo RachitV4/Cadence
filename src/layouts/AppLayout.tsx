@@ -127,8 +127,8 @@ export function AppLayout() {
           {clients.length === 0 ? (
             <p className="px-3 text-xs text-cadence-muted">No clients yet.</p>
           ) : (
-            <div className="space-y-0.5">
-              {clients.map((client) => (
+            <div className="flex-1 overflow-y-auto scrollbar-thin py-2">
+              {clients.filter(c => !c.notes?.startsWith('[ARCHIVED]')).map((client) => (
                 <div key={client.id}>
                   <Link
                     to={`/dashboard/client/${client.id}`}
@@ -245,7 +245,7 @@ export function AppLayout() {
               transition={{ duration: 0.2, ease: "easeOut" }}
               className="h-full w-full"
             >
-              <Outlet context={{ clients, refetchClients: fetchClients }} />
+              <Outlet context={{ clients: clients.filter(c => !c.notes?.startsWith('[ARCHIVED]')), refetchClients: fetchClients }} />
             </motion.div>
           </AnimatePresence>
         </main>
@@ -292,10 +292,10 @@ export function AppLayout() {
               ))}
 
               <div className="mt-4 mb-2 px-2 text-[10px] font-bold text-cadence-muted uppercase tracking-wider">Clients</div>
-              {clients.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
+              {clients.filter(c => !c.notes?.startsWith('[ARCHIVED]') && c.name.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
                 <p className="px-3 py-2 text-sm text-cadence-muted">No matching clients.</p>
               ) : (
-                clients.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase())).map((c) => (
+                clients.filter(c => !c.notes?.startsWith('[ARCHIVED]') && c.name.toLowerCase().includes(searchQuery.toLowerCase())).map((c) => (
                   <Link
                     key={c.id}
                     to={`/dashboard/client/${c.id}`}

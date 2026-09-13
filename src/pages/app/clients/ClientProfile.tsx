@@ -101,6 +101,17 @@ export function ClientProfile() {
         <div className="flex items-center gap-2">
           <button 
             onClick={async () => {
+              if (confirm('Are you sure you want to close this project and archive the client?')) {
+                await supabase.from('clients').update({ notes: '[ARCHIVED] ' + (client.notes || '') }).eq('id', client.id);
+                window.location.href = '/dashboard';
+              }
+            }}
+            className="btn-secondary text-sm"
+          >
+            Close Project
+          </button>
+          <button 
+            onClick={async () => {
               try {
                 showToast('Creating Google Drive Vault...', 'info');
                 const { data: { session } } = await supabase.auth.getSession();
@@ -208,7 +219,7 @@ export function ClientProfile() {
         </Link>
         <Link to={`/dashboard/client/${client.id}/tones`} className="card p-4 hover:border-cadence-accent transition-colors flex items-center gap-3">
           <MessageSquare className="w-5 h-5 text-cadence-accent" />
-          <div className="flex-1"><p className="text-sm font-medium text-cadence-text">Tones</p><p className="text-xs text-cadence-muted">{tone?.selected_tone?.replace('_', ' / ') || 'Not set'}</p></div>
+          <div className="flex-1"><p className="text-sm font-medium text-cadence-text">AI Inbox</p><p className="text-xs text-cadence-muted">{tone?.selected_tone?.replace('_', ' / ') || 'Not set'}</p></div>
           <ArrowRight className="w-4 h-4 text-cadence-muted" />
         </Link>
         <Link to={`/dashboard/client/${client.id}/activity`} className="card p-4 hover:border-cadence-accent transition-colors flex items-center gap-3">

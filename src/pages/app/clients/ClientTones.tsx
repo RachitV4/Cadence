@@ -217,22 +217,43 @@ export function ClientTones() {
           </button>
         </div>
         <p className="text-sm text-cadence-secondary mb-4">
-          Test out Cadence's AI. Paste an email or message from {client.name} below to analyze risk and generate a drafted response based on the selected tone.
+          Cadence AI actively monitors threads for replies. When a client replies, Cadence auto-drafts a response using your selected psychology tone for your approval.
         </p>
         <div className="card p-5">
-          <textarea
-            className="w-full text-sm leading-relaxed p-3 border border-cadence-border rounded-lg mb-3 bg-cadence-surface focus:ring-1 focus:ring-cadence-accent outline-none text-cadence-text resize-none"
-            rows={4}
-            placeholder="e.g. We're still waiting on the budget approval for the final milestone..."
-            value={playgroundInput}
-            onChange={(e) => setPlaygroundInput(e.target.value)}
-          />
+          <div className="flex items-center justify-between mb-4 border-b border-cadence-border pb-4">
+             <div className="flex items-center gap-3">
+               <div className="w-10 h-10 rounded-full bg-cadence-accentSoft flex items-center justify-center text-cadence-accent font-bold">
+                 {client.name.charAt(0)}
+               </div>
+               <div>
+                 <p className="text-sm font-medium text-cadence-text">{client.name} <span className="text-cadence-muted text-xs font-normal">via Gmail</span></p>
+                 <p className="text-xs text-cadence-muted">Active Thread: Invoice #INV-2026-001</p>
+               </div>
+             </div>
+             <div className="flex items-center gap-2">
+               <span className="relative flex w-2 h-2 shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full w-2 h-2 bg-green-500"></span>
+               </span>
+               <span className="text-xs text-cadence-muted font-medium">Auto-Monitoring</span>
+             </div>
+          </div>
+          <div className="mb-4">
+             <p className="text-xs font-mono uppercase text-cadence-muted mb-2">Simulate Client Reply</p>
+             <textarea
+               className="w-full text-sm leading-relaxed p-3 border border-cadence-border rounded-lg bg-cadence-surface focus:ring-1 focus:ring-cadence-accent outline-none text-cadence-text resize-none"
+               rows={3}
+               placeholder="e.g. We're still waiting on the budget approval for the final milestone, we'll pay next week..."
+               value={playgroundInput}
+               onChange={(e) => setPlaygroundInput(e.target.value)}
+             />
+          </div>
           <button
             onClick={handlePlaygroundSubmit}
             disabled={isAnalyzing || !playgroundInput.trim()}
-            className="w-full bg-cadence-accent hover:bg-opacity-90 text-white font-medium rounded-lg text-sm px-4 py-2.5 text-center flex items-center justify-center disabled:opacity-50"
+            className="w-full bg-cadence-accent hover:bg-opacity-90 text-cadence-accentFg font-medium rounded-lg text-sm px-4 py-2.5 text-center flex items-center justify-center disabled:opacity-50"
           >
-            {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Analyze & Draft'}
+            {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Simulate AI Auto-Draft'}
           </button>
 
           {playgroundResult && (
