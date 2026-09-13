@@ -643,7 +643,7 @@ export function InvoiceDetail() {
                 <span className="text-xs text-purple-600/80 font-medium">Multi-Agent team analyzed thread context for this draft.</span>
               </div>
             )}
-            <div className="rounded-xl border border-cadence-border bg-white shadow-sm overflow-hidden">
+            <div className="rounded-xl border border-cadence-border bg-cadence-surface shadow-sm overflow-hidden">
               <div className="bg-cadence-surface2/50 border-b border-cadence-border p-3 flex items-center gap-2">
                 <div className="flex gap-1.5 mr-4">
                   <div className="w-3 h-3 rounded-full bg-red-400/80"></div>
