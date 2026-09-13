@@ -18,6 +18,7 @@
     --color-secondary: 86 91 102;
     --color-muted: 138 144 156;
     --color-accent: 76 95 213;
+    --color-accent-fg: 255 255 255;
     --color-accentSoft: 238 240 252;
     --color-accentLine: 199 206 244;
     --color-danger: 214 69 69;
@@ -37,6 +38,7 @@
     --color-secondary: 163 163 163;
     --color-muted: 115 115 115;
     --color-accent: 229 229 229;
+    --color-accent-fg: 17 17 17;
     --color-accentSoft: 42 42 42;
     --color-accentLine: 64 64 64;
     --color-danger: 239 68 68;
@@ -56,6 +58,7 @@
     --color-secondary: 107 98 84; /* #6B6254 (Warm Gray-Brown) */
     --color-muted: 153 143 126; /* #998F7E */
     --color-accent: 184 94 48; /* #B85E30 (Rich Terracotta) */
+    --color-accent-fg: 255 255 255;
     --color-accentSoft: 242 228 219; /* #F2E4DB */
     --color-accentLine: 219 162 134; /* #DBA286 */
     --color-danger: 191 64 64;
@@ -81,7 +84,7 @@
     @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .btn-primary {
-    @apply btn bg-cadence-accent text-white hover:bg-cadence-accent/90 active:bg-cadence-accent/95;
+    @apply btn bg-cadence-accent text-cadence-accentFg hover:bg-cadence-accent/90 active:bg-cadence-accent/95;
   }
   .btn-secondary {
     @apply btn bg-cadence-surface text-cadence-text border border-cadence-border hover:bg-cadence-surface2;

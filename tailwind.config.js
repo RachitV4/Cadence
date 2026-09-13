@@ -13,6 +13,7 @@ export default {
           secondary: 'rgb(var(--color-secondary) / <alpha-value>)',
           muted: 'rgb(var(--color-muted) / <alpha-value>)',
           accent: 'rgb(var(--color-accent) / <alpha-value>)',
+          accentFg: 'rgb(var(--color-accent-fg) / <alpha-value>)',
           accentSoft: 'rgb(var(--color-accentSoft) / <alpha-value>)',
           accentLine: 'rgb(var(--color-accentLine) / <alpha-value>)',
           danger: 'rgb(var(--color-danger) / <alpha-value>)',
