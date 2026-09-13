@@ -92,43 +92,62 @@ async function getNimConfig(supabase: ReturnType<typeof createClient>): Promise<
 
 async function callNim(prompt: string, text: string, supabase: ReturnType<typeof createClient>): Promise<string> {
   const { apiKey, apiUrl, model } = await getNimConfig(supabase);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), NIM_TIMEOUT_MS);
+  const maxRetries = 3;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), NIM_TIMEOUT_MS);
 
-  try {
-    const res = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: prompt },
-          { role: 'user', content: text.slice(0, MAX_CONTRACT_TEXT_CHARS) },
-        ],
-        temperature: 0.1,
-        max_tokens: MAX_NIM_OUTPUT_TOKENS,
-      }),
-      signal: controller.signal,
-    });
+    try {
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: prompt },
+            { role: 'user', content: text.slice(0, MAX_CONTRACT_TEXT_CHARS) },
+          ],
+          temperature: 0.1,
+          max_tokens: MAX_NIM_OUTPUT_TOKENS,
+        }),
+        signal: controller.signal,
+      });
 
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`NIM API error ${res.status}: ${errText.slice(0, 500)}`);
+      if (!res.ok) {
+        const errText = await res.text();
+        if ((res.status === 429 || res.status === 503) && attempt < maxRetries) {
+          const delay = Math.pow(2, attempt) * 1500;
+          console.warn(`NIM API error ${res.status} (Attempt ${attempt + 1}/${maxRetries}). Retrying in ${delay}ms...`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        throw new Error(`NIM API error ${res.status}: ${errText.slice(0, 500)}`);
+      }
+
+      const data = await res.json();
+      return data.choices?.[0]?.message?.content ?? '';
+    } catch (error) {
+      if (controller.signal.aborted) {
+        if (attempt < maxRetries) {
+          console.warn(`NIM timeout (Attempt ${attempt + 1}/${maxRetries}). Retrying...`);
+          continue;
+        }
+        throw new Error('Contract analysis timed out while waiting for NVIDIA NIM. Please try again with a shorter contract section.');
+      }
+      if (attempt < maxRetries && error.name !== 'Error') {
+         await new Promise(r => setTimeout(r, 2000));
+         continue;
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
     }
-
-    const data = await res.json();
-    return data.choices?.[0]?.message?.content ?? '';
-  } catch (error) {
-    if (controller.signal.aborted) {
-      throw new Error('Contract analysis timed out while waiting for NVIDIA NIM. Please try again with a shorter contract section.');
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeout);
   }
+  return '';
 }
 
 Deno.serve(async (req: Request) => {
