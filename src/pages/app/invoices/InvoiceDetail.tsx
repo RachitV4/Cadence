@@ -12,9 +12,17 @@ import type { Invoice, Client, Contract, ContractTerm, InvoiceAnalysis, EmailDra
 import type { ToneKey } from '@/types';
 import {
   FileText, Receipt, Brain, Lightbulb, Mail, Copy, Edit, Send,
-  Loader2, Check, Shield, Sparkles, Save, AlertTriangle,
+  Loader2, Check, Sparkles, Save, AlertTriangle,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+
+type EmailThreadMessage = {
+  from: string;
+  date?: string;
+  subject?: string;
+  snippet?: string;
+  body?: string;
+};
 
 export function InvoiceDetail() {
   const { invoiceId } = useParams();
@@ -39,7 +47,7 @@ export function InvoiceDetail() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editSubject, setEditSubject] = useState('');
   const [editBody, setEditBody] = useState('');
-  const [emailThread, setEmailThread] = useState<any[]>([]);
+  const [emailThread, setEmailThread] = useState<EmailThreadMessage[]>([]);
   const [toneLevel, setToneLevel] = useState(25);
   const [recommendedToneLevel, setRecommendedToneLevel] = useState(25);
   const [promiseModalOpen, setPromiseModalOpen] = useState(false);
@@ -152,7 +160,7 @@ export function InvoiceDetail() {
     }
   };
 
-  const generateDraft = async (optionalThread: any[] = []) => {
+  const generateDraft = async (optionalThread: EmailThreadMessage[] = []) => {
     if (!invoice || !client || !organization || !analysis) return;
     setDrafting(true);
     setError('');
@@ -599,7 +607,7 @@ export function InvoiceDetail() {
               </div>
               {draft.status !== 'sent' && (
                 <button 
-                  onClick={generateDraft} 
+                  onClick={() => { void generateDraft(); }}
                   disabled={drafting}
                   className="btn-secondary text-xs px-2.5 py-1.5 flex items-center gap-1.5"
                 >
@@ -696,7 +704,7 @@ export function InvoiceDetail() {
                         await supabase.from('email_drafts').update({ body: newBody }).eq('id', draft.id);
                         showToast('Google Meet scheduled and added to draft!', 'success');
                         await fetchData();
-                      } catch (e) {
+                      } catch {
                         showToast('Failed to schedule Meet. Check Calendar scopes.', 'error');
                       }
                     }} 
@@ -738,7 +746,7 @@ export function InvoiceDetail() {
                       } else {
                         showToast('No new replies found yet.', 'info');
                       }
-                    } catch (e) {
+                    } catch {
                       showToast('Failed to check inbox.', 'error');
                     }
                   }} 
@@ -757,7 +765,7 @@ export function InvoiceDetail() {
               <h2 className="text-sm font-medium text-cadence-text">Drafted email</h2>
             </div>
             <p className="text-sm text-cadence-muted mb-4">Cadence will draft an email using the advice, contract context, and selected tone.</p>
-            <button onClick={generateDraft} disabled={drafting} className="btn-primary">
+            <button onClick={() => { void generateDraft(); }} disabled={drafting} className="btn-primary">
               {drafting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
               {drafting ? 'Drafting...' : 'Draft email'}
             </button>

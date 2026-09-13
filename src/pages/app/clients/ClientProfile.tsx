@@ -1,23 +1,28 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useParams, Link, Outlet } from 'react-router-dom';
+import { useParams, Link, Outlet, useNavigate, useOutletContext } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { LoadingState, Breadcrumbs, EmptyState } from '@/components/ui/Primitives';
+import { Modal } from '@/components/ui/Modal';
 import { formatCurrency, formatDate, getInvoiceDueStatus } from '@/lib/utils';
 import type { Client, Contract, Invoice, ClientTone, ActivityEvent } from '@/types';
-import { FileText, Receipt, MessageSquare, Activity as ActivityIcon, ArrowRight, Repeat, Mail, StickyNote, UserPlus } from 'lucide-react';
+import { FileText, Receipt, MessageSquare, Activity as ActivityIcon, ArrowRight, Repeat, Mail, StickyNote, UserPlus, Trash2, Loader2 } from 'lucide-react';
 
 export function ClientProfile() {
   const { clientId } = useParams();
   const { showToast } = useToast();
   const { organization } = useAuth();
+  const navigate = useNavigate();
+  const { refetchClients } = useOutletContext<{ refetchClients: () => Promise<void> }>();
   const [client, setClient] = useState<Client | null>(null);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [tone, setTone] = useState<ClientTone | null>(null);
   const [activities, setActivities] = useState<ActivityEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!clientId || !organization) return;
@@ -46,6 +51,38 @@ export function ClientProfile() {
   const activeContract = contracts.find((c) => c.status === 'complete');
   const overdueInvoices = invoices.filter((i) => getInvoiceDueStatus(i.due_date, i.payment_status) === 'overdue');
   const dueTodayInvoices = invoices.filter((i) => getInvoiceDueStatus(i.due_date, i.payment_status) === 'due_today');
+
+  const deleteClient = async () => {
+    if (!client || !organization || deleting) return;
+    setDeleting(true);
+
+    const contractPaths = contracts.map((contract) => contract.file_path).filter((path): path is string => Boolean(path));
+    const invoicePaths = invoices.map((invoice) => invoice.file_path).filter((path): path is string => Boolean(path));
+    const { error: deleteError } = await supabase
+      .from('clients')
+      .delete()
+      .eq('id', client.id)
+      .eq('organization_id', organization.id);
+
+    if (deleteError) {
+      showToast(`Could not delete client. ${deleteError.message}`, 'error');
+      setDeleting(false);
+      return;
+    }
+
+    const cleanupResults = await Promise.all([
+      contractPaths.length ? supabase.storage.from('contracts').remove(contractPaths) : Promise.resolve({ error: null }),
+      invoicePaths.length ? supabase.storage.from('invoices').remove(invoicePaths) : Promise.resolve({ error: null }),
+    ]);
+    const cleanupFailed = cleanupResults.some((result) => result.error);
+
+    await refetchClients();
+    navigate('/dashboard');
+    showToast(
+      cleanupFailed ? 'Client deleted, but one or more uploaded files could not be removed.' : 'Client and its records deleted.',
+      cleanupFailed ? 'error' : 'success',
+    );
+  };
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
@@ -83,7 +120,7 @@ export function ClientProfile() {
                 const data = await res.json();
                 window.open(data.folderUrl, '_blank');
                 showToast('Google Drive folder created!', 'success');
-              } catch (e) {
+              } catch {
                 showToast('Failed to create Drive Vault. Please re-login with Google.', 'error');
               }
             }}
@@ -116,6 +153,14 @@ export function ClientProfile() {
           >
             <svg className="w-4 h-4 mr-2 text-cadence-muted" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 14h-2v-2h2zm0-4h-2V7h2z"/></svg>
             Batch Negotiate
+          </button>
+          <button
+            onClick={() => setDeleteOpen(true)}
+            className="rounded-lg p-2 text-cadence-muted/60 transition-colors hover:bg-cadence-dangerSoft hover:text-cadence-danger"
+            aria-label={`Delete ${client.name}`}
+            title="Delete client"
+          >
+            <Trash2 className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -198,6 +243,21 @@ export function ClientProfile() {
       )}
 
       <Outlet context={{ client, refetch: fetchData }} />
+
+      <Modal open={deleteOpen} onClose={() => !deleting && setDeleteOpen(false)} title="Delete client?">
+        <div className="space-y-4">
+          <p className="text-sm text-cadence-secondary">
+            This permanently deletes <strong className="text-cadence-text">{client.name}</strong> and its contracts, invoices, email drafts, payment records, and activity history.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setDeleteOpen(false)} className="btn-secondary" disabled={deleting}>Cancel</button>
+            <button onClick={deleteClient} className="btn-danger" disabled={deleting}>
+              {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              {deleting ? 'Deleting...' : 'Delete client'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

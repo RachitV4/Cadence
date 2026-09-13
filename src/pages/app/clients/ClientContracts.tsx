@@ -7,9 +7,9 @@ import { logActivity, formatFileSize, formatRelativeTime } from '@/lib/utils';
 import { LoadingState, EmptyState, StatusBadge, Breadcrumbs, SeverityBadge, ConfidenceBadge } from '@/components/ui/Primitives';
 import { Modal } from '@/components/ui/Modal';
 import { InteractiveDocumentVisualization } from '@/components/InteractiveDocumentVisualization';
-import type { Contract, ContractTerm, ContractFinding, ContractPage } from '@/types';
+import type { Client, Contract, ContractTerm, ContractFinding, ContractPage } from '@/types';
 import { TERM_LABELS } from '@/types';
-import { Upload, FileText, Loader2, Check, Edit, Eye, AlertTriangle, X, ChevronDown, Search } from 'lucide-react';
+import { Upload, FileText, Loader2, Check, Edit, Eye, AlertTriangle, X, ChevronDown, Search, Trash2 } from 'lucide-react';
 
 export function ClientContracts() {
   const { clientId } = useParams();
@@ -33,13 +33,18 @@ export function ClientContracts() {
   const [processingStep, setProcessingStep] = useState(0);
   const [activePage, setActivePage] = useState(1);
   const [sourceText, setSourceText] = useState('');
+  const [clientName, setClientName] = useState('Client');
+  const [contractToDelete, setContractToDelete] = useState<Contract | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const latestContract = contracts[0];
 
   const fetchData = useCallback(async () => {
     if (!clientId || !organization) return;
-    const [contractsRes] = await Promise.all([
-      supabase.from('contracts').select('*').eq('client_id', clientId).order('created_at', { ascending: false }),
+    const [contractsRes, clientRes] = await Promise.all([
+      supabase.from('contracts').select('*').eq('client_id', clientId).eq('organization_id', organization.id).order('created_at', { ascending: false }),
+      supabase.from('clients').select('name').eq('id', clientId).eq('organization_id', organization.id).maybeSingle(),
     ]);
+    setClientName((clientRes.data as Pick<Client, 'name'> | null)?.name || 'Client');
     const contractList = (contractsRes.data as Contract[]) || [];
     setContracts(contractList);
     if (contractList.length > 0) {
@@ -52,6 +57,11 @@ export function ClientContracts() {
       setTerms((termsRes.data as ContractTerm[]) || []);
       setFindings((findingsRes.data as ContractFinding[]) || []);
       setPages((pagesRes.data as ContractPage[]) || []);
+    } else {
+      setTerms([]);
+      setFindings([]);
+      setPages([]);
+      setFileUrl(null);
     }
     setLoading(false);
   }, [clientId, organization]);
@@ -359,6 +369,37 @@ export function ClientContracts() {
     });
   };
 
+  const deleteContract = async () => {
+    if (!contractToDelete || !clientId || !organization || deleting) return;
+    setDeleting(true);
+
+    const { error: deleteError } = await supabase
+      .from('contracts')
+      .delete()
+      .eq('id', contractToDelete.id)
+      .eq('client_id', clientId)
+      .eq('organization_id', organization.id);
+
+    if (deleteError) {
+      showToast(`Could not delete contract. ${deleteError.message}`, 'error');
+      setDeleting(false);
+      return;
+    }
+
+    const { error: storageError } = contractToDelete.file_path
+      ? await supabase.storage.from('contracts').remove([contractToDelete.file_path])
+      : { error: null };
+
+    if (latestContract?.id === contractToDelete.id) setFileUrl(null);
+    setContractToDelete(null);
+    setDeleting(false);
+    await fetchData();
+    showToast(
+      storageError ? 'Contract deleted, but its uploaded file could not be removed.' : 'Contract deleted.',
+      storageError ? 'error' : 'success',
+    );
+  };
+
   const handleSearch = async (contractId: string) => {
     if (!searchQuery.trim()) return;
     setIsSearching(true);
@@ -376,7 +417,7 @@ export function ClientContracts() {
       if (!res.ok) throw new Error('Search failed');
       const data = await res.json();
       setSearchResult(data.answer || 'No answer found.');
-    } catch (err) {
+    } catch {
       showToast('Contract search failed', 'error');
     } finally {
       setIsSearching(false);
@@ -439,7 +480,7 @@ export function ClientContracts() {
                   'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                  clientName: client?.name || 'Client',
+                  clientName,
                   providerToken: session?.provider_token
                 }),
               });
@@ -447,7 +488,7 @@ export function ClientContracts() {
               const data = await res.json();
               window.open(data.docUrl, '_blank');
               showToast('Contract generated successfully!', 'success');
-            } catch (e) {
+            } catch {
               showToast('Failed to generate. Please re-login with Google to grant Docs permission.', 'error');
             }
           }}
@@ -532,6 +573,14 @@ export function ClientContracts() {
                   {contract.processing_stage && contract.status !== 'complete' && contract.status !== 'failed' && (
                     <span className="text-xs font-mono text-cadence-muted">{contract.processing_stage}</span>
                   )}
+                  <button
+                    onClick={() => setContractToDelete(contract)}
+                    className="ml-1 rounded-lg p-1.5 text-cadence-muted/60 transition-colors hover:bg-cadence-dangerSoft hover:text-cadence-danger"
+                    aria-label={`Delete ${contract.file_name}`}
+                    title="Delete contract"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
 
@@ -698,6 +747,21 @@ export function ClientContracts() {
           <div className="flex gap-2">
             <button onClick={() => setEditingTerm(null)} className="btn-secondary">Cancel</button>
             <button onClick={saveEditTerm} className="btn-primary">Save</button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={!!contractToDelete} onClose={() => !deleting && setContractToDelete(null)} title="Delete contract?">
+        <div className="space-y-4">
+          <p className="text-sm text-cadence-secondary">
+            This permanently deletes <strong className="text-cadence-text">{contractToDelete?.file_name}</strong> and its extracted terms, findings, and analysis data.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setContractToDelete(null)} className="btn-secondary" disabled={deleting}>Cancel</button>
+            <button onClick={deleteContract} className="btn-danger" disabled={deleting}>
+              {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              {deleting ? 'Deleting...' : 'Delete contract'}
+            </button>
           </div>
         </div>
       </Modal>

@@ -6,9 +6,16 @@ import { useToast } from '@/contexts/ToastContext';
 import { logActivity } from '@/lib/utils';
 import { getToneAnchor, normalizeToneLevel, TONE_ANCHORS, toneLevelFromKey } from '@/lib/toneSimulator';
 import { LoadingState, Breadcrumbs } from '@/components/ui/Primitives';
-import { TONES, type ToneKey } from '@/types';
-import { Check, MessageSquare, Lightbulb, Copy, Edit2, Send, Loader2, Play } from 'lucide-react';
+import type { ToneKey } from '@/types';
+import { Check, Lightbulb, Copy, Edit2, Send, Loader2, Play } from 'lucide-react';
 import type { Client, ClientTone, EmailDraft } from '@/types';
+
+type GmailMessage = {
+  from?: string;
+  date?: string;
+  subject?: string;
+  snippet?: string;
+};
 
 export function ClientTones() {
   const { clientId } = useParams();
@@ -96,7 +103,7 @@ export function ClientTones() {
     setPlaygroundResult(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const toneName = TONES.find(t => t.key === selected)?.name || 'professional';
+      const toneName = getToneAnchor(selectedLevel).label;
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-draft`, {
         method: 'POST',
         headers: {
@@ -108,7 +115,7 @@ export function ClientTones() {
       if (!res.ok) throw new Error('Analysis failed');
       const data = await res.json();
       setPlaygroundResult(data);
-    } catch (err) {
+    } catch {
       showToast('Analysis failed', 'error');
     } finally {
       setIsAnalyzing(false);
@@ -117,6 +124,10 @@ export function ClientTones() {
 
   const [isScraping, setIsScraping] = useState(false);
   const handleScrapeEmails = async () => {
+    if (!client?.contact_email) {
+      showToast('Add a client email address before importing Gmail context.', 'error');
+      return;
+    }
     setIsScraping(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -128,20 +139,20 @@ export function ClientTones() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          clientEmail: client?.email || 'client@example.com',
+          clientEmail: client.contact_email,
           providerToken: session?.provider_token,
         }),
       });
       if (!res.ok) throw new Error('Scraping failed');
-      const data = await res.json();
-      if (data.emails && data.emails.length > 0) {
-        const emailText = data.emails.map((e: any) => `From: ${e.from}\nDate: ${e.date}\nSubject: ${e.subject}\n\n${e.snippet}`).join('\n\n---\n\n');
+      const data = await res.json() as { emails?: GmailMessage[] };
+      if (data.emails?.length) {
+        const emailText = data.emails.map((email) => `From: ${email.from || 'Unknown'}\nDate: ${email.date || ''}\nSubject: ${email.subject || ''}\n\n${email.snippet || ''}`).join('\n\n---\n\n');
         setPlaygroundInput((prev) => prev + (prev ? '\n\n' : '') + emailText);
         showToast('Gmail messages imported as context.', 'success');
       } else {
         showToast('No relevant emails found.', 'success');
       }
-    } catch (err) {
+    } catch {
       showToast('Failed to scrape Gmail', 'error');
     } finally {
       setIsScraping(false);
@@ -239,7 +250,7 @@ export function ClientTones() {
                 </div>
               </div>
               <div>
-                <h4 className="text-xs font-mono uppercase tracking-wider text-cadence-accent mb-2">Drafted Response ({TONES.find(t => t.key === selected)?.name})</h4>
+                <h4 className="text-xs font-mono uppercase tracking-wider text-cadence-accent mb-2">Drafted Response ({getToneAnchor(selectedLevel).label})</h4>
                 <div className="p-4 bg-cadence-surface2 rounded-lg border border-cadence-border text-sm text-cadence-text whitespace-pre-wrap relative group mb-3">
                   {playgroundResult.draft_response}
                   <button 
@@ -261,7 +272,7 @@ export function ClientTones() {
                           'Content-Type': 'application/json',
                         },
                         body: JSON.stringify({
-                          to: client?.email || 'client@example.com',
+                          to: client.contact_email,
                           subject: 'Following up',
                           body: playgroundResult.draft_response,
                           providerToken: session?.provider_token
@@ -269,11 +280,13 @@ export function ClientTones() {
                       });
                       if (!res.ok) throw new Error('Failed to send');
                       showToast('Email sent securely via Gmail!', 'success');
-                    } catch (e) {
+                    } catch {
                       showToast('Failed to send email. Check Gmail scopes.', 'error');
                     }
                   }} 
-                  className="bg-cadence-accent text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-opacity-90 w-full justify-center"
+                  disabled={!client.contact_email}
+                  title={!client.contact_email ? 'Add a client email address to send this draft.' : undefined}
+                  className="bg-cadence-accent text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-opacity-90 w-full justify-center disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Send className="w-4 h-4" /> Send directly via Gmail
                 </button>

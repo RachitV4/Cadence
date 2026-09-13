@@ -4,10 +4,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { supabase } from '@/lib/supabase';
 import { formatRelativeTime, getInvoiceDueStatus, formatCurrency, formatDate } from '@/lib/utils';
-import { EmptyState, LoadingState, StatusBadge } from '@/components/ui/Primitives';
+import { EmptyState, LoadingState } from '@/components/ui/Primitives';
 import { AutopilotTerminal } from '@/components/AutopilotTerminal';
-import type { Client, Invoice, Contract, ActivityEvent, EmailDraft, ContractFinding } from '@/types';
-import { UserPlus, FileText, Receipt, Lightbulb, ArrowRight, Clock, AlertTriangle, CheckCircle2, TrendingUp, ShieldAlert, AlertCircle, FileWarning, Activity, Globe } from 'lucide-react';
+import type { Client, Invoice, InvoiceAnalysis, Contract, ActivityEvent, EmailDraft, ContractFinding } from '@/types';
+import { UserPlus, FileText, Receipt, Lightbulb, ArrowRight, Clock, CheckCircle2, TrendingUp, ShieldAlert, AlertCircle, FileWarning, Activity, Globe } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { motion } from 'framer-motion';
 
@@ -15,12 +15,17 @@ type HighRiskFinding = ContractFinding & {
   contract?: { file_name?: string; client?: { name?: string } };
 };
 
+type DashboardInvoice = Invoice & {
+  client?: { name?: string } | null;
+  invoice_analysis?: InvoiceAnalysis[];
+};
+
 export function Dashboard() {
   const { profile, organization } = useAuth();
   const { showToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [clients, setClients] = useState<Client[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [invoices, setInvoices] = useState<DashboardInvoice[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [activities, setActivities] = useState<ActivityEvent[]>([]);
   const [drafts, setDrafts] = useState<EmailDraft[]>([]);
@@ -45,7 +50,7 @@ export function Dashboard() {
     ]);
     
     setClients((clientsRes.data as Client[]) || []);
-    setInvoices((invoicesRes.data as Invoice[]) || []);
+    setInvoices((invoicesRes.data as DashboardInvoice[]) || []);
     setContracts((contractsRes.data as Contract[]) || []);
     setActivities((activitiesRes.data as ActivityEvent[]) || []);
     setDrafts((draftsRes.data as EmailDraft[]) || []);
@@ -86,8 +91,7 @@ export function Dashboard() {
 
     invoices.forEach(inv => {
       if (inv.payment_status !== 'paid') {
-        const analysisList = inv.invoice_analysis as any[];
-        const analysis = analysisList && analysisList.length > 0 ? analysisList[0] : null;
+        const analysis = inv.invoice_analysis?.[0] ?? null;
         if (analysis?.risk_level === 'high') high += inv.amount;
         else if (analysis?.risk_level === 'medium') medium += inv.amount;
         else low += inv.amount;
@@ -185,7 +189,7 @@ export function Dashboard() {
                 const data = await res.json();
                 window.open(data.spreadsheetUrl, '_blank');
                 showToast('Successfully synced to Google Sheets!', 'success');
-              } catch (e) {
+              } catch {
                 showToast('Failed to sync. Please re-login with Google to grant Sheets permission.', 'error');
               }
             }}
@@ -220,7 +224,7 @@ export function Dashboard() {
                   fetchData();
                 }, 12000); // 12 seconds aligns perfectly with the visual terminal simulation sequence
                 
-              } catch (e) {
+              } catch {
                 showToast('Autopilot scan failed.', 'error');
                 setIsSimulating(false);
               }

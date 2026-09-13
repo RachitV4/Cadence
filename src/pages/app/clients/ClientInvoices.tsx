@@ -7,7 +7,7 @@ import { logActivity, formatCurrency, formatDate, getInvoiceDueStatus } from '@/
 import { LoadingState, EmptyState, Breadcrumbs, ErrorState } from '@/components/ui/Primitives';
 import { Modal } from '@/components/ui/Modal';
 import type { Invoice, Contract, ContractTerm } from '@/types';
-import { Upload, Receipt, Loader2, ArrowRight, Edit, Check, AlertTriangle, Clock } from 'lucide-react';
+import { Upload, Receipt, Loader2, ArrowRight, Edit, Check, AlertTriangle, Clock, Trash2 } from 'lucide-react';
 import * as mammoth from 'mammoth';
 import Tesseract from 'tesseract.js';
 
@@ -29,6 +29,8 @@ export function ClientInvoices() {
   const [contractTerms, setContractTerms] = useState<ContractTerm[]>([]);
   const [draftingDispute, setDraftingDispute] = useState<string | null>(null);
   const [disputeEmail, setDisputeEmail] = useState<{ subject: string, body: string } | null>(null);
+  const [invoiceToDelete, setInvoiceToDelete] = useState<Invoice | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!clientId || !organization) return;
@@ -270,10 +272,41 @@ export function ClientInvoices() {
       if (!response.ok) throw new Error('Failed to generate email');
       const data = await response.json();
       setDisputeEmail(data);
-    } catch (err) {
+    } catch {
       showToast('Failed to draft dispute', 'error');
     }
     setDraftingDispute(null);
+  };
+
+  const deleteInvoice = async () => {
+    if (!invoiceToDelete || !clientId || !organization || deleting) return;
+    setDeleting(true);
+
+    const { error: deleteError } = await supabase
+      .from('invoices')
+      .delete()
+      .eq('id', invoiceToDelete.id)
+      .eq('client_id', clientId)
+      .eq('organization_id', organization.id);
+
+    if (deleteError) {
+      showToast(`Could not delete invoice. ${deleteError.message}`, 'error');
+      setDeleting(false);
+      return;
+    }
+
+    const { error: storageError } = invoiceToDelete.file_path
+      ? await supabase.storage.from('invoices').remove([invoiceToDelete.file_path])
+      : { error: null };
+
+    setFileUrl(null);
+    setInvoiceToDelete(null);
+    setDeleting(false);
+    await fetchData();
+    showToast(
+      storageError ? 'Invoice deleted, but its uploaded file could not be removed.' : 'Invoice deleted.',
+      storageError ? 'error' : 'success',
+    );
   };
 
   if (loading) return <LoadingState message="Loading invoices..." />;
@@ -369,6 +402,14 @@ export function ClientInvoices() {
                       {inv.extraction_status === 'processing' ? 'Processing' : 'Needs confirmation'}
                     </span>
                   )}
+                  <button
+                    onClick={() => setInvoiceToDelete(inv)}
+                    className="ml-1 rounded-lg p-1.5 text-cadence-muted/60 transition-colors hover:bg-cadence-dangerSoft hover:text-cadence-danger"
+                    aria-label={`Delete ${inv.invoice_number || 'invoice'}`}
+                    title="Delete invoice"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             );
@@ -419,6 +460,21 @@ export function ClientInvoices() {
         )}
       </Modal>
 
+      <Modal open={!!invoiceToDelete} onClose={() => !deleting && setInvoiceToDelete(null)} title="Delete invoice?">
+        <div className="space-y-4">
+          <p className="text-sm text-cadence-secondary">
+            This permanently deletes <strong className="text-cadence-text">{invoiceToDelete?.invoice_number || invoiceToDelete?.file_name || 'this invoice'}</strong>, including its analysis, payment history, promises, and email drafts.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setInvoiceToDelete(null)} className="btn-secondary" disabled={deleting}>Cancel</button>
+            <button onClick={deleteInvoice} className="btn-danger" disabled={deleting}>
+              {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              {deleting ? 'Deleting...' : 'Delete invoice'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Dispute Email Modal */}
       <Modal open={!!disputeEmail} onClose={() => setDisputeEmail(null)} title="Dispute Email Draft">
         {disputeEmail && (
@@ -453,7 +509,7 @@ export function ClientInvoices() {
                     if (!res.ok) throw new Error('Failed to send');
                     showToast('Email sent securely via Gmail!', 'success');
                     setDisputeEmail(null);
-                  } catch (e) {
+                  } catch {
                     showToast('Failed to send email. Check Gmail scopes.', 'error');
                   }
                 }} 
