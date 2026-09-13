@@ -207,10 +207,13 @@ Deno.serve(async (req: Request) => {
 
     const startTime = Date.now();
 
-    const systemPrompt = `You are a contract analysis AI for a freelance/agency invoicing tool called Cadence.
-Analyze the following contract text and extract key terms and findings.
+    const systemPrompt = `You are an expert contract analysis AI. You MUST output ONLY valid JSON.
+DO NOT output conversational text, greetings, or explanations. DO NOT use markdown formatting.
+Even if the text is empty or not a contract, you MUST return the JSON structure with "not_found" values.
 
-Return ONLY a valid JSON object with this exact structure:
+Extract key terms and findings from the provided contract text.
+
+Return EXACTLY this JSON structure, and absolutely nothing else:
 {
   "terms": [
     { "key": "payment_terms", "value": "e.g. Net 30", "status": "found", "confidence": "high", "source_page": 1, "source_section": "Section name", "source_text": "exact quote from contract" },
@@ -231,11 +234,11 @@ Return ONLY a valid JSON object with this exact structure:
 }
 
 Rules:
-- For terms not found in the contract, use status "not_found", value "", confidence "low".
-- source_page should be the page number where the term was found (estimate if unsure, based on document order).
-- source_text should be a short exact quote from the contract supporting the extracted value (maximum 160 characters).
-- Include 2-3 findings that highlight the most important clauses, risks, or unusual terms.
-- Return ONLY the JSON, no markdown, no explanation.`;
+1. For terms not found in the contract, set "status": "not_found", "value": "", "confidence": "low".
+2. "source_page" must be a number (estimate if unsure).
+3. "source_text" must be a short exact quote (max 160 chars) or empty string.
+4. Include 2-3 findings highlighting important clauses, risks, or unusual terms (or an empty array if none).
+5. YOUR ENTIRE OUTPUT MUST BE PARSABLE BY JSON.parse(). DO NOT OUTPUT ANYTHING OUTSIDE THE {} BRACES.`;
 
     let terms: TermResult[] = [];
     let findings: FindingResult[] = [];
