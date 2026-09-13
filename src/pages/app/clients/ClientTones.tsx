@@ -129,27 +129,17 @@ export function ClientTones() {
   const [isScraping, setIsScraping] = useState(false);
   const [realEmails, setRealEmails] = useState<any[]>([]);
   const lastEmailCountRef = useRef(0);
+  const stopPollingRef = useRef(false);
 
   const fetchRealEmails = async (silent = true) => {
-    if (!client) return;
+    if (!client || stopPollingRef.current) return;
     if (!silent) setIsScraping(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scrape-gmail`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session?.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          clientEmail: client?.contact_email || 'client@example.com',
-          providerToken: session?.provider_token,
-        }),
-      });
       
       let data;
-      if (!res.ok || !session?.provider_token) {
-        // Fallback for hackathon demo if Google OAuth token is missing (e.g. after page refresh) or API fails
+      if (!session?.provider_token) {
+        // Skip network request entirely if we don't have the token to avoid 500 logs
         data = {
           emails: [{
             id: 'mock-' + Date.now(),
@@ -160,7 +150,33 @@ export function ClientTones() {
           }]
         };
       } else {
-        data = await res.json();
+        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scrape-gmail`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session?.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            clientEmail: client?.contact_email || 'client@example.com',
+            providerToken: session?.provider_token,
+          }),
+        });
+        
+        if (!res.ok) {
+          // If the real API fails (e.g., expired token, missing scopes), stop polling so we don't spam the console!
+          stopPollingRef.current = true;
+          data = {
+            emails: [{
+              id: 'mock-' + Date.now(),
+              subject: 'Re: Overdue Invoice #INV-2026-001',
+              snippet: "Hi, sorry for the delay. We are waiting on budget approval and will send the payment next Tuesday.",
+              from: client?.contact_email || 'client@example.com',
+              date: new Date().toLocaleDateString()
+            }]
+          };
+        } else {
+          data = await res.json();
+        }
       }
       if (data.emails && data.emails.length > 0) {
         setRealEmails(data.emails);
