@@ -48,9 +48,7 @@ export function Onboarding() {
       <div className="flex-1 flex items-center justify-center px-4 py-8">
         <div className="w-full max-w-md">
           <div className="text-center mb-8">
-            <div className="w-10 h-10 rounded-lg bg-cadence-accent flex items-center justify-center mx-auto mb-4">
-              <span className="font-display font-bold text-white">C</span>
-            </div>
+            <img src="/logo.png" alt="Cadence" className="w-12 h-12 mx-auto mb-4" />
             <h1 className="font-display text-2xl font-semibold text-cadence-text">Welcome to Cadence</h1>
             <p className="text-sm text-cadence-muted mt-2">Let's set up your workspace. This takes 30 seconds.</p>
           </div>
