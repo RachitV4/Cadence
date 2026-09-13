@@ -169,7 +169,7 @@ You will be provided with:
 - Contract Terms: ${JSON.stringify(contractTerms)}
 - Cadence Analysis & Strategy: ${advice || 'None'}
 - Detailed Reasoning: ${explanation || 'None'}
-- Target Tone: ${toneKey} - ${toneDesc}
+- Target Tone: ${toneAnchor.key} - ${toneDesc}
 ${emailThread && emailThread.length > 0 ? `- RECENT EMAIL CONTEXT (The client replied recently. YOU MUST RESPOND DIRECTLY TO THEIR LATEST POINTS): \n${emailThread.map((e: any) => `[From ${e.from}]: ${e.snippet}`).join('\n')}` : ''}
 - CONTRACT TERMS (Hierarchical Knowledge Graph):
 ${Object.entries(termsMap).map(([k, v]) => `- ${k.replace(/_/g, ' ')}: ${v}`).join('\n') || 'None provided'}
