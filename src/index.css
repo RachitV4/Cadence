@@ -71,8 +71,8 @@
 
   body {
     font-family: 'Inter', system-ui, sans-serif;
-    background-color: rgb(var(--color-bg));
-    color: rgb(var(--color-text));
+    background-color: rgb(rgb(var(--color-bg)));
+    color: rgb(rgb(var(--color-text)));
   }
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Space Grotesk', system-ui, sans-serif;

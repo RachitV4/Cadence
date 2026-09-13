@@ -24,7 +24,7 @@ async function getNimConfig(supabase: ReturnType<typeof createClient>): Promise<
   return { 
     apiKey, 
     apiUrl: apiUrl || 'https://integrate.api.nvidia.com/v1/chat/completions', 
-    model: model || 'meta/llama3-70b-instruct' 
+    model: model || 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning' 
   };
 }
 

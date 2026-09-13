@@ -307,12 +307,12 @@ export function Dashboard() {
                 <div className="h-[220px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(var(--color-border))" opacity={0.6} />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'rgb(var(--color-muted))', fontSize: 12 }} dy={10} />
-                      <YAxis axisLine={false} tickLine={false} tick={{ fill: 'rgb(var(--color-muted))', fontSize: 12 }} tickFormatter={(value) => `$${(value/1000)}k`} dx={-10} />
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(rgb(var(--color-border)))" opacity={0.6} />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'rgb(rgb(var(--color-muted)))', fontSize: 12 }} dy={10} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fill: 'rgb(rgb(var(--color-muted)))', fontSize: 12 }} tickFormatter={(value) => `$${(value/1000)}k`} dx={-10} />
                       <Tooltip 
                         cursor={{ fill: 'transparent' }} 
-                        contentStyle={{ backgroundColor: 'rgb(var(--color-surface))', border: '1px solid rgb(var(--color-border))', borderRadius: '8px', color: 'rgb(var(--color-text))' }} 
+                        contentStyle={{ backgroundColor: 'rgb(rgb(var(--color-surface)))', border: '1px solid rgb(rgb(var(--color-border)))', borderRadius: '8px', color: 'rgb(rgb(var(--color-text)))' }} 
                         formatter={(value) => [formatCurrency(Number(Array.isArray(value) ? value[0] : value ?? 0)), 'Amount'] as [string, string]} 
                       />
                       <Bar dataKey="amount" radius={[6, 6, 0, 0]} maxBarSize={40}>
@@ -332,12 +332,12 @@ export function Dashboard() {
                 <div className="h-[220px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={riskChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(var(--color-border))" opacity={0.6} />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'rgb(var(--color-muted))', fontSize: 12 }} dy={10} />
-                      <YAxis axisLine={false} tickLine={false} tick={{ fill: 'rgb(var(--color-muted))', fontSize: 12 }} tickFormatter={(value) => `$${(value/1000)}k`} dx={-10} />
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(rgb(var(--color-border)))" opacity={0.6} />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'rgb(rgb(var(--color-muted)))', fontSize: 12 }} dy={10} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fill: 'rgb(rgb(var(--color-muted)))', fontSize: 12 }} tickFormatter={(value) => `$${(value/1000)}k`} dx={-10} />
                       <Tooltip 
                         cursor={{ fill: 'transparent' }} 
-                        contentStyle={{ backgroundColor: 'rgb(var(--color-surface))', border: '1px solid rgb(var(--color-border))', borderRadius: '8px', color: 'rgb(var(--color-text))' }} 
+                        contentStyle={{ backgroundColor: 'rgb(rgb(var(--color-surface)))', border: '1px solid rgb(rgb(var(--color-border)))', borderRadius: '8px', color: 'rgb(rgb(var(--color-text)))' }} 
                         formatter={(value) => [formatCurrency(Number(Array.isArray(value) ? value[0] : value ?? 0)), 'Amount'] as [string, string]} 
                       />
                       <Bar dataKey="amount" radius={[6, 6, 0, 0]} maxBarSize={40}>
