@@ -48,22 +48,22 @@
   }
 
   [data-theme="parchment"] {
-    --color-bg: 245 244 238;
-    --color-surface: 252 252 250;
-    --color-surface2: 234 232 224;
-    --color-border: 223 220 210;
-    --color-text: 44 42 38;
-    --color-secondary: 101 98 90;
-    --color-muted: 150 147 138;
-    --color-accent: 169 104 65; /* Burnt terracotta */
-    --color-accentSoft: 242 234 228;
-    --color-accentLine: 208 167 146;
-    --color-danger: 181 66 66;
-    --color-dangerSoft: 244 226 226;
-    --color-warning: 164 117 37;
-    --color-warningSoft: 243 239 231;
-    --color-success: 60 123 80;
-    --color-successSoft: 229 239 232;
+    --color-bg: 243 238 226; /* #F3EEE2 (Warm Beige) */
+    --color-surface: 252 249 242; /* #FCF9F2 (Creamy Off-White) */
+    --color-surface2: 235 228 211; /* #EBE4D3 (Darker Cream) */
+    --color-border: 221 211 193; /* #DDD3C1 (Muted Sand) */
+    --color-text: 61 54 44; /* #3D362C (Deep Espresso) */
+    --color-secondary: 107 98 84; /* #6B6254 (Warm Gray-Brown) */
+    --color-muted: 153 143 126; /* #998F7E */
+    --color-accent: 184 94 48; /* #B85E30 (Rich Terracotta) */
+    --color-accentSoft: 242 228 219; /* #F2E4DB */
+    --color-accentLine: 219 162 134; /* #DBA286 */
+    --color-danger: 191 64 64;
+    --color-dangerSoft: 250 232 232;
+    --color-warning: 173 111 21;
+    --color-warningSoft: 245 233 218;
+    --color-success: 64 128 85;
+    --color-successSoft: 227 240 231;
   }
 
   body {

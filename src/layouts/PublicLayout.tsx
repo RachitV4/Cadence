@@ -1,10 +1,16 @@
 import { Link, Outlet, NavLink } from 'react-router-dom';
-import { useState } from 'react';
-import { Menu, X, ChevronDown } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Menu, X, ChevronDown, Sun, Moon, Feather } from 'lucide-react';
 
 export function PublicLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [resourcesOpen, setResourcesOpen] = useState(false);
+  const [theme, setTheme] = useState<'light' | 'dark' | 'parchment'>(() => (localStorage.getItem('cadence-theme') as any) || 'light');
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('cadence-theme', theme);
+  }, [theme]);
 
   const navItems = [
     { label: 'Product', href: '/product' },
@@ -69,6 +75,19 @@ export function PublicLayout() {
             </div>
           </div>
           <div className="hidden md:flex items-center gap-3">
+            <button
+              onClick={() => {
+                const themes = ['light', 'dark', 'parchment'];
+                const next = themes[(themes.indexOf(theme) + 1) % themes.length];
+                setTheme(next as any);
+              }}
+              className="p-2 text-cadence-secondary hover:text-cadence-text hover:bg-cadence-surface2 rounded-lg transition-colors mr-2"
+              title="Toggle theme"
+            >
+              {theme === 'light' && <Sun className="w-5 h-5" />}
+              {theme === 'dark' && <Moon className="w-5 h-5" />}
+              {theme === 'parchment' && <Feather className="w-5 h-5" />}
+            </button>
             <Link to="/login" className="text-sm text-cadence-secondary hover:text-cadence-text transition-colors">
               Log in
             </Link>
@@ -77,6 +96,19 @@ export function PublicLayout() {
             </Link>
           </div>
           <div className="md:hidden flex items-center gap-3">
+            <button
+              onClick={() => {
+                const themes = ['light', 'dark', 'parchment'];
+                const next = themes[(themes.indexOf(theme) + 1) % themes.length];
+                setTheme(next as any);
+              }}
+              className="p-1.5 text-cadence-secondary hover:text-cadence-text hover:bg-cadence-surface2 rounded-lg transition-colors"
+              title="Toggle theme"
+            >
+              {theme === 'light' && <Sun className="w-5 h-5" />}
+              {theme === 'dark' && <Moon className="w-5 h-5" />}
+              {theme === 'parchment' && <Feather className="w-5 h-5" />}
+            </button>
             <Link to="/signup" className="btn-primary text-xs px-3 py-1.5">
               Get started
             </Link>
