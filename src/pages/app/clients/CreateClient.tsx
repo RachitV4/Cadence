@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useOutletContext } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -11,6 +11,7 @@ export function CreateClient() {
   const navigate = useNavigate();
   const { organization } = useAuth();
   const { showToast } = useToast();
+  const { refetchClients } = useOutletContext<{ refetchClients: () => void }>();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [isRepeat, setIsRepeat] = useState(false);
@@ -41,6 +42,7 @@ export function CreateClient() {
 
     await logActivity(organization.id, 'client_created', 'Client created', `${name} added to your workspace.`, { client_id: data.id });
     setLoading(false);
+    refetchClients(); // Trigger immediate sidebar update
     showToast('Client created.', 'success');
     navigate(`/dashboard/client/${data.id}`);
   };
