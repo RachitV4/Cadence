@@ -63,6 +63,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        if (session.provider_token) {
+          localStorage.setItem('google_provider_token', session.provider_token);
+        } else {
+          const cachedToken = localStorage.getItem('google_provider_token');
+          if (cachedToken) {
+            session.provider_token = cachedToken;
+          }
+        }
+      }
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
@@ -73,9 +83,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session) {
+        if (session.provider_token) {
+          localStorage.setItem('google_provider_token', session.provider_token);
+        } else {
+          const cachedToken = localStorage.getItem('google_provider_token');
+          if (cachedToken) {
+            session.provider_token = cachedToken;
+          }
+        }
+      }
       setSession(session);
       setUser(session?.user ?? null);
       if (event === 'SIGNED_OUT' || !session) {
+        localStorage.removeItem('google_provider_token');
         setProfile(null);
         setOrganization(null);
         setNeedsOnboarding(false);
