@@ -12,6 +12,16 @@ import {
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 
+type ThemeName = 'light' | 'dark' | 'parchment';
+type SidebarClient = Client & { hasHighRisk: boolean };
+
+const THEMES: ThemeName[] = ['light', 'dark', 'parchment'];
+
+function getInitialTheme(): ThemeName {
+  const savedTheme = localStorage.getItem('cadence-theme');
+  return THEMES.includes(savedTheme as ThemeName) ? savedTheme as ThemeName : 'light';
+}
+
 export function AppLayout() {
   const { organization, signOut } = useAuth();
   const { unreadCount } = useNotifications();
@@ -20,8 +30,9 @@ export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [clients, setClients] = useState<Client[]>([]);
-  const [theme, setTheme] = useState<'light' | 'dark' | 'parchment'>(() => (localStorage.getItem('cadence-theme') as any) || 'light');
+  const [clients, setClients] = useState<SidebarClient[]>([]);
+  const [clientsLoading, setClientsLoading] = useState(true);
+  const [theme, setTheme] = useState<ThemeName>(getInitialTheme);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -29,7 +40,10 @@ export function AppLayout() {
   }, [theme]);
 
   const fetchClients = useCallback(async () => {
-    if (!organization) return;
+    if (!organization) {
+      setClientsLoading(false);
+      return;
+    }
     
     // Fetch clients
     const { data: clientsData } = await supabase
@@ -55,7 +69,8 @@ export function AppLayout() {
       return { ...client, hasHighRisk };
     });
 
-    setClients(enrichedClients as any);
+    setClients(enrichedClients as SidebarClient[]);
+    setClientsLoading(false);
   }, [organization]);
 
   useEffect(() => {
@@ -124,7 +139,12 @@ export function AppLayout() {
           <div className="mt-6 mb-2 px-3">
             <span className="text-xs font-mono uppercase tracking-wider text-cadence-muted">Your clients</span>
           </div>
-          {clients.length === 0 ? (
+          {clientsLoading ? (
+            <div className="space-y-2 px-3 py-2" aria-label="Loading clients">
+              <div className="h-7 rounded-lg bg-cadence-surface2 animate-pulse" />
+              <div className="h-7 w-4/5 rounded-lg bg-cadence-surface2 animate-pulse" />
+            </div>
+          ) : clients.length === 0 ? (
             <p className="px-3 text-xs text-cadence-muted">No clients yet.</p>
           ) : (
             <div className="flex-1 overflow-y-auto scrollbar-thin py-2">
@@ -139,7 +159,7 @@ export function AppLayout() {
                         : 'text-cadence-secondary hover:bg-cadence-surface2'
                     )}
                   >
-                    {(client as any).hasHighRisk ? (
+                    {client.hasHighRisk ? (
                       <span className="relative flex w-2 h-2 shrink-0">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                         <span className="relative inline-flex rounded-full w-2 h-2 bg-red-500"></span>
@@ -214,9 +234,8 @@ export function AppLayout() {
             </button>
             <button
               onClick={() => {
-                const themes = ['light', 'dark', 'parchment'];
-                const next = themes[(themes.indexOf(theme) + 1) % themes.length];
-                setTheme(next as any);
+                const next = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+                setTheme(next);
               }}
               className="p-2 text-cadence-secondary hover:text-cadence-text hover:bg-cadence-surface2 rounded-lg transition-colors"
               title="Toggle theme"
@@ -235,7 +254,7 @@ export function AppLayout() {
             </Link>
           </div>
         </header>
-        <main className="flex-1 overflow-y-auto relative px-4 md:px-8 py-6">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden relative px-5 py-6 sm:px-6 lg:px-8 lg:py-8">
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}
@@ -243,7 +262,7 @@ export function AppLayout() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.2, ease: "easeOut" }}
-              className="h-full w-full"
+              className="mx-auto min-h-full w-full max-w-[1600px]"
             >
               <Outlet context={{ clients: clients.filter(c => !c.notes?.startsWith('[ARCHIVED]')), refetchClients: fetchClients }} />
             </motion.div>

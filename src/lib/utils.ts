@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import type { ActivityEvent } from '@/types';
 
 export async function logActivity(
   organizationId: string,
@@ -33,6 +34,21 @@ export async function createNotification(
     body,
     type,
     link,
+  });
+}
+
+export function dedupeActivityEvents(events: ActivityEvent[], windowMs = 300_000): ActivityEvent[] {
+  const latestBySignature = new Map<string, number>();
+  const normalize = (value: string) => value.toLowerCase().replace(/\s+/g, ' ').trim();
+
+  return events.filter((event) => {
+    const signature = [normalize(event.event_title), event.client_id || 'organization'].join('|');
+    const createdAt = new Date(event.created_at).getTime();
+    const previous = latestBySignature.get(signature);
+
+    if (previous !== undefined && Math.abs(previous - createdAt) <= windowMs) return false;
+    latestBySignature.set(signature, createdAt);
+    return true;
   });
 }
 

@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { logActivity, formatFileSize, formatRelativeTime } from '@/lib/utils';
-import { LoadingState, EmptyState, StatusBadge, Breadcrumbs, SeverityBadge, ConfidenceBadge } from '@/components/ui/Primitives';
+import { PageLoadingState, EmptyState, StatusBadge, Breadcrumbs, SeverityBadge, ConfidenceBadge } from '@/components/ui/Primitives';
 import { Modal } from '@/components/ui/Modal';
 import { InteractiveDocumentVisualization } from '@/components/InteractiveDocumentVisualization';
 import type { Client, Contract, ContractTerm, ContractFinding, ContractPage } from '@/types';
@@ -424,10 +424,10 @@ export function ClientContracts() {
     }
   };
 
-  if (loading) return <LoadingState message="Loading contracts..." />;
+  if (loading) return <PageLoadingState title="Loading contracts" message="Preparing documents and extracted terms..." />;
 
   return (
-    <div className="relative min-h-[calc(100vh-8rem)]">
+    <div className="app-page relative min-h-[calc(100vh-8rem)] pb-10">
       {/* Magic Dropzone Overlay */}
       {(isDragging || processingStep > 0) && (
         <div className="absolute inset-0 z-50 rounded-xl flex items-center justify-center bg-cadence-bg/80 backdrop-blur-sm border-2 border-dashed border-cadence-accent transition-all duration-300">
@@ -499,9 +499,9 @@ export function ClientContracts() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] xl:gap-8">
         {/* Left Side: Document Preview */}
-        <div>
+        <div className="min-w-0 lg:sticky lg:top-20 lg:self-start">
           <InteractiveDocumentVisualization
             fileUrl={fileUrl}
             fileName={latestContract?.file_name || ''}
@@ -516,7 +516,7 @@ export function ClientContracts() {
         </div>
 
         {/* Right Side: Verification Forms and Upload */}
-        <div>
+        <div className="min-w-0">
           {/* Upload area */}
           <div
         className="border-2 border-dashed border-cadence-border rounded-xl p-8 text-center mb-6 hover:border-cadence-accent transition-colors cursor-pointer"

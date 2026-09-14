@@ -3,9 +3,9 @@ import { useParams, Link, Outlet, useNavigate, useOutletContext } from 'react-ro
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
-import { LoadingState, Breadcrumbs, EmptyState } from '@/components/ui/Primitives';
+import { PageLoadingState, Breadcrumbs, EmptyState } from '@/components/ui/Primitives';
 import { Modal } from '@/components/ui/Modal';
-import { formatCurrency, formatDate, getInvoiceDueStatus } from '@/lib/utils';
+import { dedupeActivityEvents, formatCurrency, formatDate, getInvoiceDueStatus } from '@/lib/utils';
 import type { Client, Contract, Invoice, ClientTone, ActivityEvent } from '@/types';
 import { FileText, Receipt, MessageSquare, Activity as ActivityIcon, ArrowRight, Repeat, Mail, StickyNote, UserPlus, Trash2, Loader2 } from 'lucide-react';
 
@@ -37,7 +37,7 @@ export function ClientProfile() {
     setContracts((contractsRes.data as Contract[]) || []);
     setInvoices((invoicesRes.data as Invoice[]) || []);
     setTone(toneRes.data as ClientTone | null);
-    setActivities((activitiesRes.data as ActivityEvent[]) || []);
+    setActivities(dedupeActivityEvents((activitiesRes.data as ActivityEvent[]) || []));
     setLoading(false);
   }, [clientId, organization]);
 
@@ -45,7 +45,7 @@ export function ClientProfile() {
     fetchData();
   }, [fetchData]);
 
-  if (loading) return <LoadingState />;
+  if (loading) return <PageLoadingState title="Loading client" message="Gathering contracts, invoices, and activity..." />;
   if (!client) return <EmptyState icon={<UserPlus className="w-6 h-6" />} title="Client not found" description="This client may have been deleted." action={<Link to="/dashboard" className="btn-secondary">Back to dashboard</Link>} />;
 
   const activeContract = contracts.find((c) => c.status === 'complete');
@@ -85,20 +85,20 @@ export function ClientProfile() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto w-full pb-10">
+    <div className="app-page max-w-5xl pb-10">
       <Breadcrumbs items={[{ label: 'Dashboard', href: '/dashboard' }, { label: client.name }]} />
 
-      <div className="flex items-start justify-between mb-6">
-        <div>
+      <div className="flex flex-col gap-4 mb-6 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
           <h1 className="font-display text-2xl font-semibold text-cadence-text">{client.name}</h1>
-          <div className="flex items-center gap-3 mt-1.5 text-sm text-cadence-muted">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-sm text-cadence-muted">
             {client.contact_email && <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5" /> {client.contact_email}</span>}
             <span className="flex items-center gap-1">
               <Repeat className="w-3.5 h-3.5" /> {client.is_repeat ? 'Repeat client' : 'New client'}
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button 
             onClick={async () => {
               if (confirm('Are you sure you want to close this project and archive the client?')) {

@@ -6,7 +6,7 @@ import { useToast } from '@/contexts/ToastContext';
 import { logActivity, formatCurrency, formatDate, getInvoiceDueStatus, getInvoiceAge } from '@/lib/utils';
 import { getSmartAlerts } from '@/lib/smartAlerts';
 import { getToneAnchor, normalizeToneLevel, TONE_ANCHORS, toneLevelFromKey } from '@/lib/toneSimulator';
-import { LoadingState, ErrorState, Breadcrumbs, StatusBadge } from '@/components/ui/Primitives';
+import { PageLoadingState, ErrorState, Breadcrumbs, StatusBadge } from '@/components/ui/Primitives';
 import { Modal } from '@/components/ui/Modal';
 import type { Invoice, Client, Contract, ContractTerm, InvoiceAnalysis, EmailDraft, PaymentEvent, PaymentPromise } from '@/types';
 import type { ToneKey } from '@/types';
@@ -364,7 +364,7 @@ export function InvoiceDetail() {
     }
   };
 
-  if (loading) return <LoadingState message="Loading invoice..." />;
+  if (loading) return <PageLoadingState title="Loading invoice" message="Gathering contract context, advice, and drafts..." />;
   if (!invoice || !client) return <ErrorState message="Invoice not found." />;
 
   const dueStatus = getInvoiceDueStatus(invoice.due_date, invoice.payment_status);
@@ -375,7 +375,7 @@ export function InvoiceDetail() {
   const recommendedTone = getToneAnchor(recommendedToneLevel);
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
+    <div className="app-page max-w-4xl pb-10">
       <Breadcrumbs items={[
         { label: 'Dashboard', href: '/dashboard' },
         { label: client.name, href: `/dashboard/client/${client.id}` },
@@ -407,16 +407,16 @@ export function InvoiceDetail() {
         {/* From the contract */}
         {contract && terms.length > 0 && (
           <div className="card p-5">
-            <div className="flex items-center gap-2 mb-4">
+            <div className="flex flex-wrap items-center gap-2 mb-4">
               <FileText className="w-4 h-4 text-cadence-accent" />
               <h2 className="text-sm font-medium text-cadence-text">From the contract</h2>
               <span className="text-xs text-cadence-muted">{contract.file_name}</span>
             </div>
-            <dl className="grid sm:grid-cols-2 gap-3">
+            <dl className="grid grid-cols-1 gap-x-6 md:grid-cols-2">
               {terms.filter((t) => t.status === 'found').slice(0, 6).map((term) => (
-                <div key={term.id} className="flex justify-between text-sm border-b border-cadence-border pb-2">
-                  <dt className="text-cadence-muted capitalize">{term.term_key.replace(/_/g, ' ')}</dt>
-                  <dd className="font-mono text-cadence-text">{term.edited_value || term.term_value}</dd>
+                <div key={term.id} className="grid grid-cols-[minmax(7rem,0.42fr)_minmax(0,1fr)] items-start gap-4 border-b border-cadence-border py-3 text-sm first:pt-0">
+                  <dt className="capitalize leading-5 text-cadence-muted">{term.term_key.replace(/_/g, ' ')}</dt>
+                  <dd className="min-w-0 break-words text-right font-mono leading-5 text-cadence-text">{term.edited_value || term.term_value}</dd>
                 </div>
               ))}
             </dl>
@@ -481,9 +481,7 @@ export function InvoiceDetail() {
               <p className="text-cadence-text">Promised for <span className="font-mono">{formatDate(paymentPromise.promised_date)}</span></p>
               {paymentPromise.notes && <p className="mt-1 text-xs text-cadence-muted">{paymentPromise.notes}</p>}
             </div>
-          ) : (
-            <button onClick={openPromiseModal} className="btn-secondary text-sm">Record promise</button>
-          )}
+          ) : <p className="text-xs text-cadence-muted">No payment promise has been recorded.</p>}
         </div>
 
         {/* Cadence's advice */}

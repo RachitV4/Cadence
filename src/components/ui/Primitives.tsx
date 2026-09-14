@@ -91,6 +91,39 @@ export function LoadingState({ message = 'Loading...' }: { message?: string }) {
   );
 }
 
+export function PageLoadingState({
+  title = 'Loading workspace',
+  message = 'Getting the latest information ready...',
+}: {
+  title?: string;
+  message?: string;
+}) {
+  return (
+    <div className="app-page animate-pulse" aria-live="polite" aria-busy="true">
+      <div className="mb-7 flex items-end justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="mb-3 h-3 w-28 rounded-full bg-cadence-surface2" />
+          <div className="mb-2 h-8 w-52 max-w-full rounded-lg bg-cadence-surface2" />
+          <p className="text-sm text-cadence-muted">{title} · {message}</p>
+        </div>
+        <div className="hidden h-9 w-28 rounded-lg bg-cadence-surface2 sm:block" />
+      </div>
+      <div className="grid gap-5 lg:grid-cols-2">
+        {[0, 1].map((item) => (
+          <div key={item} className="card p-5">
+            <div className="mb-5 h-4 w-36 rounded bg-cadence-surface2" />
+            <div className="space-y-3">
+              <div className="h-3 w-full rounded bg-cadence-surface2" />
+              <div className="h-3 w-5/6 rounded bg-cadence-surface2" />
+              <div className="h-24 w-full rounded-lg bg-cadence-surface2" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 px-4 text-center">

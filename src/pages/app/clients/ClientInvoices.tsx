@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { logActivity, formatCurrency, formatDate, getInvoiceDueStatus } from '@/lib/utils';
-import { LoadingState, EmptyState, Breadcrumbs, ErrorState } from '@/components/ui/Primitives';
+import { PageLoadingState, EmptyState, Breadcrumbs, ErrorState } from '@/components/ui/Primitives';
 import { Modal } from '@/components/ui/Modal';
 import type { Invoice, Contract, ContractTerm } from '@/types';
 import { Upload, Receipt, Loader2, ArrowRight, Edit, Check, AlertTriangle, Clock, Trash2 } from 'lucide-react';
@@ -309,27 +309,27 @@ export function ClientInvoices() {
     );
   };
 
-  if (loading) return <LoadingState message="Loading invoices..." />;
+  if (loading) return <PageLoadingState title="Loading invoices" message="Matching invoices with contract terms..." />;
 
   return (
-    <div>
+    <div className="app-page pb-10">
       <Breadcrumbs items={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Invoices' }]} />
       <h1 className="font-display text-2xl font-semibold text-cadence-text mb-6">Invoices</h1>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] xl:gap-8">
         {/* Left Side: Document Preview */}
-        <div>
+        <div className="min-w-0 lg:sticky lg:top-20 lg:self-start">
           {fileUrl ? (
-            <object data={fileUrl} className="w-full h-[800px] rounded-xl border border-cadence-border" />
+            <object data={fileUrl} className="h-[460px] w-full rounded-xl border border-cadence-border bg-cadence-surface sm:h-[600px] lg:h-[720px]" />
           ) : (
-            <div className="w-full h-[800px] rounded-xl border border-cadence-border bg-cadence-surface flex items-center justify-center text-cadence-muted">
+            <div className="flex h-[360px] w-full items-center justify-center rounded-xl border border-dashed border-cadence-border bg-cadence-surface text-sm text-cadence-muted sm:h-[460px] lg:h-[560px]">
               No document selected
             </div>
           )}
         </div>
 
         {/* Right Side: Verification Forms and Upload */}
-        <div>
+        <div className="min-w-0">
           {/* Upload area */}
           <div className="flex flex-col sm:flex-row gap-3 mb-6">
         <div

@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { supabase } from '@/lib/supabase';
-import { formatRelativeTime, getInvoiceDueStatus, formatCurrency, formatDate } from '@/lib/utils';
-import { EmptyState, LoadingState } from '@/components/ui/Primitives';
+import { dedupeActivityEvents, formatRelativeTime, getInvoiceDueStatus, formatCurrency, formatDate } from '@/lib/utils';
+import { EmptyState, PageLoadingState } from '@/components/ui/Primitives';
 import { AutopilotTerminal } from '@/components/AutopilotTerminal';
 import type { Client, Invoice, InvoiceAnalysis, Contract, ActivityEvent, EmailDraft, ContractFinding } from '@/types';
 import { UserPlus, FileText, Receipt, Lightbulb, ArrowRight, Clock, CheckCircle2, TrendingUp, ShieldAlert, AlertCircle, FileWarning, Activity, Globe } from 'lucide-react';
@@ -61,10 +61,10 @@ export function Dashboard() {
       const c = allClients.find(c => c.id === con.client_id);
       return c && !(c.notes || '').startsWith('[ARCHIVED]');
     }));
-    setActivities(((activitiesRes.data as ActivityEvent[]) || []).filter(act => {
+    setActivities(dedupeActivityEvents(((activitiesRes.data as ActivityEvent[]) || []).filter(act => {
       const c = allClients.find(c => c.id === act.client_id);
       return !c || !(c.notes || '').startsWith('[ARCHIVED]');
-    }));
+    })));
     setDrafts(((draftsRes.data as EmailDraft[]) || []).filter(draft => {
       const c = allClients.find(c => c.id === draft.client_id);
       return c && !(c.notes || '').startsWith('[ARCHIVED]');
@@ -150,7 +150,7 @@ export function Dashboard() {
     }).sort((a, b) => b.avgDelay - a.avgDelay);
   }, [clients, invoices]);
 
-  if (loading) return <LoadingState message="Loading your dashboard..." />;
+  if (loading) return <PageLoadingState title="Loading your dashboard" message="Calculating receivables and risks..." />;
 
   const firstName = profile?.full_name?.split(' ')[0] || 'there';
   const isEmpty = clients.length === 0;
@@ -181,7 +181,7 @@ export function Dashboard() {
   ];
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+    <div className="app-page max-w-6xl">
       {/* Header */}
       <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -307,12 +307,12 @@ export function Dashboard() {
                 <div className="h-[220px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(rgb(var(--color-border)))" opacity={0.6} />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'rgb(rgb(var(--color-muted)))', fontSize: 12 }} dy={10} />
-                      <YAxis axisLine={false} tickLine={false} tick={{ fill: 'rgb(rgb(var(--color-muted)))', fontSize: 12 }} tickFormatter={(value) => `$${(value/1000)}k`} dx={-10} />
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(var(--color-border))" opacity={0.6} />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'rgb(var(--color-muted))', fontSize: 12 }} dy={10} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fill: 'rgb(var(--color-muted))', fontSize: 12 }} tickFormatter={(value) => `$${(value/1000)}k`} dx={-10} />
                       <Tooltip 
                         cursor={{ fill: 'transparent' }} 
-                        contentStyle={{ backgroundColor: 'rgb(rgb(var(--color-surface)))', border: '1px solid rgb(rgb(var(--color-border)))', borderRadius: '8px', color: 'rgb(rgb(var(--color-text)))' }} 
+                        contentStyle={{ backgroundColor: 'rgb(var(--color-surface))', border: '1px solid rgb(var(--color-border))', borderRadius: '8px', color: 'rgb(var(--color-text))' }}
                         formatter={(value) => [formatCurrency(Number(Array.isArray(value) ? value[0] : value ?? 0)), 'Amount'] as [string, string]} 
                       />
                       <Bar dataKey="amount" radius={[6, 6, 0, 0]} maxBarSize={40}>
@@ -332,12 +332,12 @@ export function Dashboard() {
                 <div className="h-[220px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={riskChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(rgb(var(--color-border)))" opacity={0.6} />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'rgb(rgb(var(--color-muted)))', fontSize: 12 }} dy={10} />
-                      <YAxis axisLine={false} tickLine={false} tick={{ fill: 'rgb(rgb(var(--color-muted)))', fontSize: 12 }} tickFormatter={(value) => `$${(value/1000)}k`} dx={-10} />
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(var(--color-border))" opacity={0.6} />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'rgb(var(--color-muted))', fontSize: 12 }} dy={10} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fill: 'rgb(var(--color-muted))', fontSize: 12 }} tickFormatter={(value) => `$${(value/1000)}k`} dx={-10} />
                       <Tooltip 
                         cursor={{ fill: 'transparent' }} 
-                        contentStyle={{ backgroundColor: 'rgb(rgb(var(--color-surface)))', border: '1px solid rgb(rgb(var(--color-border)))', borderRadius: '8px', color: 'rgb(rgb(var(--color-text)))' }} 
+                        contentStyle={{ backgroundColor: 'rgb(var(--color-surface))', border: '1px solid rgb(var(--color-border))', borderRadius: '8px', color: 'rgb(var(--color-text))' }}
                         formatter={(value) => [formatCurrency(Number(Array.isArray(value) ? value[0] : value ?? 0)), 'Amount'] as [string, string]} 
                       />
                       <Bar dataKey="amount" radius={[6, 6, 0, 0]} maxBarSize={40}>

@@ -8,6 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      buffer: fileURLToPath(new URL('./node_modules/buffer/index.js', import.meta.url)),
     },
   },
   optimizeDeps: {

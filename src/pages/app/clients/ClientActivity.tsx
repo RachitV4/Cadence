@@ -2,8 +2,8 @@ import { useState, useCallback, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { formatDateTime } from '@/lib/utils';
-import { LoadingState, EmptyState, Breadcrumbs } from '@/components/ui/Primitives';
+import { dedupeActivityEvents, formatDateTime } from '@/lib/utils';
+import { PageLoadingState, EmptyState, Breadcrumbs } from '@/components/ui/Primitives';
 import type { Client, ActivityEvent } from '@/types';
 import { Activity as ActivityIcon } from 'lucide-react';
 
@@ -31,19 +31,18 @@ export function ClientActivity() {
       supabase.from('activity_events').select('*').eq('client_id', clientId).order('created_at', { ascending: false }),
     ]);
     setClient(clientRes.data as Client | null);
-    setEvents((eventsRes.data as ActivityEvent[]) || []);
+    setEvents(dedupeActivityEvents((eventsRes.data as ActivityEvent[]) || []));
     setLoading(false);
   }, [clientId, organization]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  if (loading) return <LoadingState />;
-  if (!client) return <LoadingState />;
+  if (loading || !client) return <PageLoadingState title="Loading activity" message="Building the client timeline..." />;
 
   const grouped = groupByDate(events);
 
   return (
-    <div>
+    <div className="app-page max-w-5xl pb-10">
       <Breadcrumbs items={[{ label: 'Dashboard', href: '/dashboard' }, { label: client.name, href: `/dashboard/client/${client.id}` }, { label: 'Activity' }]} />
       <h1 className="font-display text-2xl font-semibold text-cadence-text mb-6">Activity</h1>
 

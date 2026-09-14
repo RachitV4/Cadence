@@ -33,10 +33,10 @@
     --color-bg: 17 17 17;
     --color-surface: 26 26 26;
     --color-surface2: 36 36 36;
-    --color-border: 51 51 51;
+    --color-border: 64 64 64;
     --color-text: 243 243 243;
-    --color-secondary: 163 163 163;
-    --color-muted: 115 115 115;
+    --color-secondary: 184 184 184;
+    --color-muted: 148 148 148;
     --color-accent: 229 229 229;
     --color-accent-fg: 17 17 17;
     --color-accentSoft: 42 42 42;
@@ -71,8 +71,8 @@
 
   body {
     font-family: 'Inter', system-ui, sans-serif;
-    background-color: rgb(rgb(var(--color-bg)));
-    color: rgb(rgb(var(--color-text)));
+    background-color: rgb(var(--color-bg));
+    color: rgb(var(--color-text));
   }
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Space Grotesk', system-ui, sans-serif;
@@ -102,7 +102,10 @@
     @apply block text-sm font-medium text-cadence-text mb-1.5;
   }
   .card {
-    @apply bg-cadence-surface border border-cadence-border rounded-xl;
+    @apply bg-cadence-surface border border-cadence-border rounded-xl shadow-sm;
+  }
+  .app-page {
+    @apply mx-auto w-full max-w-7xl;
   }
   .card-danger {
     @apply bg-cadence-dangerSoft border border-cadence-danger/30 rounded-xl;
@@ -130,14 +133,14 @@
 @layer utilities {
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: 231 231 226 transparent;
+    scrollbar-color: rgb(var(--color-border)) transparent;
   }
   .scrollbar-thin::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: 231 231 226;
+    background-color: rgb(var(--color-border));
     border-radius: 3px;
   }
   .animate-fade-in {

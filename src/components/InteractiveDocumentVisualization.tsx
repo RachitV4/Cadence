@@ -260,9 +260,9 @@ export function InteractiveDocumentVisualization({
         )}
       </div>
 
-      <div ref={viewerRef} className="relative flex min-h-[560px] items-start justify-center overflow-auto bg-cadence-surface2 p-4 scrollbar-thin">
+      <div ref={viewerRef} className="relative flex min-h-[420px] max-h-[680px] items-start justify-center overflow-auto bg-cadence-surface2 p-3 sm:min-h-[500px] sm:p-4 lg:min-h-[560px] scrollbar-thin">
         {!fileUrl ? (
-          <div className="flex h-[520px] flex-col items-center justify-center text-center text-cadence-muted">
+          <div className="flex h-[380px] flex-col items-center justify-center text-center text-cadence-muted sm:h-[460px] lg:h-[520px]">
             <FileText className="mb-3 h-9 w-9" />
 
             <p className="text-sm">
