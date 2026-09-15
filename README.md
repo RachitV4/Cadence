@@ -1,111 +1,177 @@
-  ─────Cadence
-  AI-Powered Commercial Intelligence & Autonomous Accounts Receivable
+# Cadence
 
-    We don't just chase overdue invoices. We understand why they haven't been paid, and decide what should happen next.
-      
-    The Problem •
-    The Solution •
-    Features •
-    Tech Stack •
-    Getting Started──────
-  ## 🛑 The Problem
+### AI-Powered Commercial Intelligence for Accounts Receivable
 
-  In B2B services, getting paid isn't as simple as sending a Stripe link. When a $50,000 invoice is 30 days late, it's
-  rarely because the client "forgot."
+> **We don't just chase overdue invoices. We understand why they haven't been paid — and help decide what should happen next.**
 
-  • Are they disputing a deliverable based on a clause in the MSA?
-  • Did they promise to pay "next Friday" in an email thread three weeks ago?
-  • Is the late fee penalty actually enforceable based on the signed SOW?
+---
 
-  Sending an aggressive, automated "PAY NOW" email destroys client relationships. But manually cross-referencing
-  contracts, emails, and invoices takes hours.
+## 🛑 The Problem
 
-  ## ✨ The Solution: Cadence
-  Cadence is an intelligent platform that sits at the intersection of your Contracts, your Invoices, and your Inbox.
+In B2B services, getting paid isn't always as simple as sending another reminder.
 
-  Using a multi-agent AI architecture powered by NVIDIA NIM (Llama 3 70B), Cadence automatically extracts legal
-  constraints from heavy PDFs, reads the latest context from your email threads, and generates highly-tuned,
-  relationship-preserving emails to negotiate payments safely.
-  ──────
-  ## 🚀 Core Features
+When an invoice is 30 days late, the important question is often **why**.
 
-  ### 📄 Intelligent Contract Parsing (Edge AI)
+- Is the client disputing a deliverable based on the contract?
+- Did they promise to pay last Friday and miss the commitment?
+- What does the agreement actually allow you to do?
+- Is a late fee applicable?
+- Should the next message be friendly, firm, or escalated?
 
-  Upload massive, dense 20-page Master Services Agreements (MSAs) or SOWs. Cadence dynamically chunks the document,
-  extracting up to 25,000 characters per pass. It instantly identifies Payment Terms, Late Fee constraints, IP
-  ownership, and hidden termination risks—highlighting them directly on the PDF.
+The information needed to make that decision is fragmented across **contracts, invoices, emails, payment commitments, and client history**.
 
-  ### 🧠 Multi-Agent Negotiation & Thread Context
+Generic automated reminders ignore this context. Manually reconstructing it takes time.
 
-  Cadence doesn't write blind emails. When drafting a payment reminder, our Edge Functions scrape the client's recent
-  Gmail replies. The AI acts as a multi-agent negotiator, analyzing the specific context of their last email and
-  dynamically drafting a counter-proposal that directly addresses their concerns without violating the contract.
-  ### 🎛️ 0-100 Emotional Tone Simulator
-  Instead of generic "casual" or "strict" settings, Cadence features a dynamic 0-100 toneLevel slider. Dial in the
-  exact level of empathy or aggression required for the situation. The slider values are injected directly into the
-  LLM system prompt to instantly rewrite the email's emotional weight.
+---
 
-  ### 🚨 Smart Alerts & High-Risk Detection
-  Cadence monitors "Payment Promises" (e.g., "We will pay next Friday"). If a promise is broken, or if late fees hit a
-  critical threshold, the UI triggers a pulsing High-Risk anomaly alert, warning you to shift from a collaborative
-  tone to a protective legal tone.
+## ✨ The Solution
 
-  ### ⚡ Real-Time, Premium UI
-  Built for speed and aesthetic perfection.
+**Cadence brings contracts, invoices, client communication, and collection intelligence into one Accounts Receivable workflow.**
 
-  • Live Syncing: Powered by Supabase Realtime Postgres subscriptions—when a client is added or an analysis finishes
-  in the background, the UI updates instantly without a refresh.
-  • Command Palette: Press Cmd+K anywhere to instantly search clients or jump to invoices.
-  • Premium B2B Design: A beautiful Deep Navy and Electric Lavender dark-mode interface, smoothed by Framer Motion
-  animations and delightful interactive overlays.
-  ──────
-  ## 🏗 Architecture & Tech Stack
+Instead of treating an overdue invoice as an isolated number, Cadence builds context around it.
 
-  Frontend:
+It extracts commercial terms from contracts, connects them to invoices, analyzes payment behavior and communication history, tracks payment promises, identifies risks, recommends actions, and generates context-aware collection emails.
 
-  • React 18 & Vite: Lightning-fast HMR and optimized builds.
-  • Tailwind CSS & Framer Motion: For a premium, fluid dark-mode UI.
-  • Recharts: For dynamic Cash Flow and Risk visualizations.
-  Backend & Infrastructure:
+> **From overdue invoice → commercial context → informed action.**
 
-  • Supabase (PostgreSQL): Relational database with Row Level Security.
-  • Supabase Realtime: WebSocket-based live UI updates and toast notifications.
-  • Supabase Storage: Secure PDF contract storage.
+---
 
-  AI & Processing:
-  • Supabase Edge Functions (Deno): Serverless architecture for background processing, contract extraction, and Gmail
-  scraping.
-  • NVIDIA NIM (Llama 3 70B Instruct): Powering the complex multi-agent extraction and negotiation logic with blazing
-  fast inference.
-  ──────
-  ## 🚦 Getting Started
-  ### Prerequisites
-  • Node.js (v18+)
-  • A Supabase project
-  • An NVIDIA NIM API Key
+## 🚀 Core Features
 
-  ### Local Setup
-  1. Clone the repository
-    git clone https://github.com/RachitV4/Cadence.git
-    cd cadence-main
+### 📄 Contract Intelligence
 
-  2. Install dependencies
-    npm install
+Upload contracts, MSAs, and SOWs. Cadence extracts important commercial terms including payment terms, late fees, contract value, renewal conditions, termination rights, liability, intellectual property, and confidentiality.
 
-  3. Environment Variables
-  Create a .env file in the root directory:
-    VITE_SUPABASE_URL=your_supabase_url
-    VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-  Note: Ensure your NIM_API_KEY and NIM_API_URL are securely added to your Supabase Edge Function secrets.
-  4. Run the development server
-    npm run dev
+Extracted findings remain connected to the source document, allowing users to inspect the relevant page rather than relying only on an AI summary.
 
-  ──────
-  ## 👥 The Team
+### 🧾 Invoice Intelligence
 
-  Built with ❤️ during the hackathon by:
+Cadence analyzes invoices alongside their commercial context, including outstanding balance, due date, overdue duration, related contract, payment history, promises, and risk indicators.
 
-  • Rachit — Business Model, Target Customer, Value Proposition
-  • Surya — Technical Feasibility, Architecture, AI Implementation
-  • Nisanth — Market Validation, User Research
-  • Rishaan — Competitive Analysis & Feature Logic***
+This allows Cadence to understand not simply **that an invoice is overdue, but what should happen next**.
+
+### 🧠 AI Collection Advice
+
+Cadence evaluates available contract, invoice, client, and communication context to recommend the next collection action.
+
+Instead of applying the same escalation rule to every invoice, recommendations can account for contract rights, payment behavior, previous promises, outstanding amounts, and recent client responses.
+
+### 💬 AI Inbox & Email Generation
+
+Cadence uses invoice details, contract terms, Gmail communication, payment promises, client history, and risk signals to generate context-aware collection emails.
+
+Users remain in control and can review or modify messages before sending.
+
+### 🎛️ 0–100 Dynamic Tone Control
+
+Rather than limiting users to labels such as "friendly" or "strict," Cadence provides a continuous **0–100 tone control**:
+
+**0 — Humble • 25 — Casual/Friendly • 50 — Formal • 75 — Strict • 100 — Strict/Formal**
+
+Cadence recommends an initial tone based on the situation, while users can override it and regenerate the message without losing important commercial facts.
+
+### 🤝 Payment Promise Tracking
+
+Promises such as *"We'll pay by Friday"* become structured collection context instead of disappearing inside email threads.
+
+Cadence can identify missed commitments and use them when determining risk, recommended actions, alerts, and communication tone.
+
+### 🚨 Smart Alerts & Risk Signals
+
+Cadence surfaces events requiring attention, including overdue invoices, broken payment promises, increasing client risk, important contract constraints, and communication requiring follow-up.
+
+### 🔎 Interactive Document Analysis
+
+Users can navigate uploaded PDFs, review extracted findings, inspect source text, and move from a finding directly to its relevant source page—making AI-assisted extraction easier to verify.
+
+### 📊 Dashboard & Activity
+
+Cadence provides a consolidated view of outstanding invoices, client risk, alerts, recent activity, payment commitments, drafts, and recommended actions, supported by filtering, sorting, responsive layouts, and clear loading and error states.
+
+---
+
+## 🏗 Architecture & Tech Stack
+
+### Frontend
+
+- **React 18 + Vite** — Application framework
+- **TypeScript** — Type-safe application logic
+- **Tailwind CSS** — Responsive styling
+- **Framer Motion** — UI interactions and transitions
+- **Recharts** — Dashboard visualizations
+
+### Backend & Infrastructure
+
+- **Supabase PostgreSQL** — Relational application data
+- **Supabase Realtime** — Live application updates
+- **Supabase Storage** — Document storage
+- **Supabase Edge Functions (Deno)** — Server-side processing and integrations
+
+### AI & Integrations
+
+- **NVIDIA NIM** — AI-powered extraction, reasoning, collection advice, and email generation
+- **Gmail** — Client communication and reply context
+- **PDF Processing** — Contract and invoice intelligence
+
+---
+
+## 🔄 How Cadence Works
+
+1. **Add a client** and relevant commercial context.
+2. **Upload a contract** — Cadence extracts important terms.
+3. **Upload invoices** and connect them to the client and contract.
+4. **Analyze the situation** using overdue status, contract terms, communication, promises, and risk.
+5. **Receive a recommended action** and AI-recommended communication tone.
+6. **Generate and review an email** before sending.
+7. **Track replies, promises, alerts, and activity** as context for the next decision.
+
+---
+
+## 🚦 Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- Supabase project
+- NVIDIA NIM API credentials
+- Gmail configuration for email functionality
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/RachitV4/Cadence.git
+cd Cadence
+npm install
+```
+
+### 2. Configure environment variables
+
+Create the required local environment file:
+
+```env
+VITE_SUPABASE_URL=your_supabase_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
+
+Store NVIDIA NIM credentials and other sensitive server-side configuration securely as Supabase Edge Function secrets rather than exposing them to the frontend.
+
+### 3. Run Cadence
+
+```bash
+npm run dev
+```
+
+---
+
+## 👥 The Team
+
+Built during the hackathon by:
+
+- **Rachit** — Business Model, Target Customer & Value Proposition
+- **Surya** — Technical Feasibility, Architecture & AI Implementation
+- **Nisanth** — Market Validation & User Research
+- **Rishaan** — Competitive Analysis & Feature Logic
+
+---
+
+**Cadence — Commercial context for every collection decision.**
