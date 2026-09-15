@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 const MAX_CONTRACT_TEXT_CHARS = 10_000; // Reduced for faster processing with reasoning models
-const NIM_TIMEOUT_MS = 90_000; // Increase timeout to 90s to give reasoning models more time
+const NIM_TIMEOUT_MS = 45_000;
 const MAX_NIM_OUTPUT_TOKENS = 1_200;
 
 interface TermResult {
@@ -34,7 +34,7 @@ interface FindingResult {
 const TERM_KEYS = ['payment_terms', 'contract_value', 'late_fee', 'effective_date', 'expiration_date', 'termination', 'liability', 'ip', 'renewal', 'confidentiality', 'milestones'];
 
 function parseJsonResponse(response: string): { terms: TermResult[]; findings: FindingResult[] } {
-  // Remove <thought> or <think> blocks typical of reasoning models
+  // Reasoning models may wrap otherwise valid JSON in thought blocks or fences.
   let cleaned = response.replace(/<(?:thought|think)>[\s\S]*?<\/(?:thought|think)>/gi, '');
   
   // Remove markdown fencing
@@ -48,7 +48,7 @@ function parseJsonResponse(response: string): { terms: TermResult[]; findings: F
   }
 
   const parsed = JSON.parse(cleaned.slice(start, end + 1));
-  if (!Array.isArray(parsed.terms) || !Array.isArray(parsed.findings)) {
+  if (!Array.isArray(parsed.terms)) {
     throw new Error('NIM response does not match the contract extraction schema');
   }
 
@@ -65,7 +65,9 @@ function parseJsonResponse(response: string): { terms: TermResult[]; findings: F
     throw new Error('NIM did not extract any contract terms');
   }
 
-  return { terms, findings: parsed.findings };
+  // Findings are supplementary; a valid term extraction should not fail because
+  // the model omitted that optional list.
+  return { terms, findings: Array.isArray(parsed.findings) ? parsed.findings : [] };
 }
 
 async function getNimConfig(supabase: ReturnType<typeof createClient>): Promise<{ apiKey: string; apiUrl: string; model: string }> {
@@ -92,8 +94,9 @@ async function getNimConfig(supabase: ReturnType<typeof createClient>): Promise<
 
 async function callNim(prompt: string, text: string, supabase: ReturnType<typeof createClient>): Promise<string> {
   const { apiKey, apiUrl, model } = await getNimConfig(supabase);
-  const maxRetries = 3;
+  const maxRetries = 1;
   
+  // Retry transient capacity errors only; deterministic schema failures should surface.
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), NIM_TIMEOUT_MS);
@@ -113,6 +116,9 @@ async function callNim(prompt: string, text: string, supabase: ReturnType<typeof
           ],
           temperature: 0.1,
           max_tokens: MAX_NIM_OUTPUT_TOKENS,
+          // This model reasons visibly by default. For structured extraction that
+          // can consume the output budget before it emits the required JSON.
+          chat_template_kwargs: { enable_thinking: false },
         }),
         signal: controller.signal,
       });
@@ -190,6 +196,7 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    // Analysis runs provide durable stage/error visibility independently of the UI.
     const { data: analysisRun, error: analysisRunError } = await supabase.from('contract_analysis_runs').insert({
       contract_id: contractId,
       stage: 'ai_extraction',
