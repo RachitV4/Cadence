@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 const MAX_CONTRACT_TEXT_CHARS = 10_000; // Reduced for faster processing with reasoning models
-const NIM_TIMEOUT_MS = 45_000;
+const NIM_TIMEOUT_MS = 60_000;
 const MAX_NIM_OUTPUT_TOKENS = 1_200;
 
 interface TermResult {
@@ -94,7 +94,7 @@ async function getNimConfig(supabase: ReturnType<typeof createClient>): Promise<
 
 async function callNim(prompt: string, text: string, supabase: ReturnType<typeof createClient>): Promise<string> {
   const { apiKey, apiUrl, model } = await getNimConfig(supabase);
-  const maxRetries = 1;
+  const maxRetries = 2;
   
   // Retry transient capacity errors only; deterministic schema failures should surface.
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
