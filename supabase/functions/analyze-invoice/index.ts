@@ -16,6 +16,8 @@ interface InvoiceExtraction {
 }
 
 function parseInvoiceResponse(response: string): InvoiceExtraction {
+  // Accept common reasoning-model wrappers, then validate the normalized payload
+  // before the frontend is allowed to mark extraction complete.
   let cleaned = response.replace(/<(?:thought|think)>[\s\S]*?<\/(?:thought|think)>/gi, '');
   cleaned = cleaned.replace(/```(?:json)?\s*/gi, '').replace(/```\s*/gi, '').trim();
   
@@ -127,6 +129,7 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    // Service-role access is used only after proving the caller belongs to this tenant.
     const { data: member } = await supabase
       .from('organization_members')
       .select('id')

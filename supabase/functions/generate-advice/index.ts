@@ -70,7 +70,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json();
-    const { invoiceId, organizationId, clientId, contractTerms, clientContext, invoiceData, paymentHistory, invoiceCount, slackWebhookUrl } = body;
+    const { invoiceId, organizationId, contractTerms, clientContext, invoiceData, paymentHistory, slackWebhookUrl } = body;
 
     if (!invoiceId || !organizationId) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -97,6 +97,8 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    // Service-role reads are permitted only after the caller's tenant membership
+    // has been verified with their own authenticated session.
     const { data: member } = await supabase
       .from('organization_members')
       .select('id')
@@ -132,6 +134,8 @@ Deno.serve(async (req: Request) => {
     const onTimePayments = pastPayments.filter((p: { days_late: number }) => p.days_late === 0).length;
     const latePayments = pastPayments.filter((p: { days_late: number }) => p.days_late > 0).length;
 
+    // Advice is grounded in invoice facts, the complete client contract hierarchy,
+    // and actual payment history; the model is not asked to invent missing context.
     const prompt = `Analyze this invoice situation and provide payment follow-up advice.
 
 INVOICE DETAILS:
@@ -207,7 +211,8 @@ Rules:
       };
     } catch (aiErr) {
       console.error('AI advice generation failed, using fallback:', aiErr.message);
-      // Fallback logic
+      // Keep the workflow useful during an AI outage using only deterministic facts
+      // already supplied by the invoice and payment history.
       let riskLevel = 'low';
       if (dueStatus === 'overdue' && invoiceAge > 30) riskLevel = 'high';
       else if (dueStatus === 'overdue' && invoiceAge > 14) riskLevel = 'medium';

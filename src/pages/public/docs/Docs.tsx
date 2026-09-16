@@ -37,9 +37,9 @@ const TOPICS: Record<string, { title: string; sections: { heading: string; body:
     ],
   },
   'tones': {
-    title: 'Tones',
+    title: 'AI Inbox & Tone',
     sections: [
-      { heading: 'The five tones', body: ['Humble: soft and deferential, acknowledging the relationship.', 'Casual / Friendly: warm and conversational, like a normal check-in.', 'Formal: professional and structured, referencing terms and dates.', 'Strict: direct and firm, referencing obligations plainly.', 'Modest: measured and understated, stating facts without insistence.'] },
+      { heading: 'The 0–100 tone scale', body: ['Move from Humble through Gentle, Friendly, Modest, Formal, Professional, Firm, Direct, Strict, and Strict & Formal.', 'Cadence shows a live example before you generate or rewrite an email, so the effect is clear.'] },
       { heading: 'How tone is recommended', body: ['Cadence considers the client relationship, payment behavior, invoice urgency, and contract formality.', 'A long-standing client with a good track record gets a warmer tone. A repeat late-payer gets a firmer one.'] },
     ],
   },
@@ -53,7 +53,7 @@ const TOPICS: Record<string, { title: string; sections: { heading: string; body:
   'integrations': {
     title: 'Integrations',
     sections: [
-      { heading: 'Current integrations', body: ['Cadence processes documents server-side using AI through secure edge functions.', 'Email sending is demo-mode only — you review and send manually.'] },
+      { heading: 'Current integrations', body: ['Cadence processes documents using AI through secure edge functions.', 'Connect Google to review Gmail context and send approved drafts. Cadence never sends a draft without your action.'] },
       { heading: 'Planned integrations', body: ['Gmail and Outlook for sending emails directly.', 'Stripe, QuickBooks, and Xero for invoice synchronization.', 'Slack and HubSpot for notifications and CRM sync.'] },
     ],
   },
@@ -64,7 +64,7 @@ const SIDEBAR = [
   { key: 'contracts', label: 'Contracts', icon: FileText },
   { key: 'invoices', label: 'Invoices', icon: Receipt },
   { key: 'ai-advice', label: 'AI Advice', icon: Brain },
-  { key: 'tones', label: 'Tones', icon: MessageSquare },
+  { key: 'tones', label: 'AI Inbox & Tone', icon: MessageSquare },
   { key: 'security', label: 'Security', icon: Shield },
   { key: 'integrations', label: 'Integrations', icon: Plug },
 ];

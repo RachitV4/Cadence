@@ -45,11 +45,11 @@ serve(async (req) => {
       contracts.forEach((c) => {
         reportText += `\nContract: ${c.file_name}\n`;
         reportText += `Terms extracted:\n`;
-        c.contract_terms.forEach((t: any) => {
+        c.contract_terms.forEach((t: { term_key: string; edited_value?: string; term_value: string }) => {
           reportText += `  - ${t.term_key.replace('_', ' ')}: ${t.edited_value || t.term_value}\n`;
         });
         reportText += `AI Findings:\n`;
-        c.contract_findings.forEach((f: any) => {
+        c.contract_findings.forEach((f: { severity: string; title: string; description: string }) => {
           reportText += `  - [${f.severity.toUpperCase()}] ${f.title}: ${f.description}\n`;
         });
       });

@@ -53,6 +53,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// The hook and provider intentionally share this module so they use the same context instance.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useToast() {
   return useContext(ToastContext);
 }

@@ -4,8 +4,9 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { logActivity } from '@/lib/utils';
-import { getToneAnchor, normalizeToneLevel, TONE_ANCHORS, toneLevelFromKey } from '@/lib/toneSimulator';
-import { PageLoadingState, Breadcrumbs } from '@/components/ui/Primitives';
+import { getToneAnchor, toneLevelFromKey } from '@/lib/toneSimulator';
+import { PageLoadingState, Breadcrumbs, ErrorState } from '@/components/ui/Primitives';
+import { ToneSlider } from '@/components/ToneSlider';
 import type { ToneKey } from '@/types';
 import { Check, Lightbulb, Copy, Edit2, Send, Loader2, Play } from 'lucide-react';
 import type { Client, ClientTone, EmailDraft } from '@/types';
@@ -31,6 +32,9 @@ export function ClientTones() {
   const [drafts, setDrafts] = useState<EmailDraft[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedLevel, setSelectedLevel] = useState(25);
+  const [savedLevel, setSavedLevel] = useState(25);
+  const [visibleDraftCount, setVisibleDraftCount] = useState(5);
+  const [dataError, setDataError] = useState('');
   
   const [editingDraft, setEditingDraft] = useState<string | null>(null);
   const [editBody, setEditBody] = useState('');
@@ -41,15 +45,19 @@ export function ClientTones() {
 
   const fetchData = useCallback(async () => {
     if (!clientId || !organization) return;
+    setDataError('');
     const [clientRes, toneRes, draftsRes] = await Promise.all([
       supabase.from('clients').select('*').eq('id', clientId).maybeSingle(),
       supabase.from('client_tones').select('*').eq('client_id', clientId).maybeSingle(),
       supabase.from('email_drafts').select('*').eq('client_id', clientId).order('created_at', { ascending: false }),
     ]);
+    const queryError = clientRes.error || toneRes.error || draftsRes.error;
+    if (queryError) setDataError(queryError.message);
     setClient(clientRes.data as Client | null);
     setTone(toneRes.data as ClientTone | null);
 
-    // Filter duplicates by body
+    // Regeneration can leave historical rows with identical content; collapse those
+    // in the inbox without mutating the persisted audit trail.
     const uniqueDrafts: EmailDraft[] = [];
     const seenBodies = new Set<string>();
     for (const d of ((draftsRes.data as EmailDraft[]) || [])) {
@@ -62,9 +70,12 @@ export function ClientTones() {
 
     if (toneRes.data) {
       const savedTone = toneRes.data as ClientTone;
-      setSelectedLevel(savedTone.selected_tone_level ?? toneLevelFromKey(savedTone.selected_tone as ToneKey));
+      const level = savedTone.selected_tone_level ?? toneLevelFromKey(savedTone.selected_tone as ToneKey);
+      setSelectedLevel(level);
+      setSavedLevel(level);
     } else {
       setSelectedLevel(25);
+      setSavedLevel(25);
     }
     setLoading(false);
   }, [clientId, organization]);
@@ -74,6 +85,8 @@ export function ClientTones() {
   const saveTone = async () => {
     if (!clientId || !organization || !client) return;
     try {
+      // This is the client's baseline preference. Individual invoice overrides are
+      // persisted by InvoiceDetail and only influence the historical average.
       const anchor = getToneAnchor(selectedLevel);
       const { error } = tone
         ? await supabase.from('client_tones').update({ selected_tone: anchor.key, selected_tone_level: selectedLevel }).eq('id', tone.id)
@@ -81,35 +94,62 @@ export function ClientTones() {
       if (error) throw error;
       await logActivity(organization.id, 'tone_selected', 'Tone selected', `Tone baseline set to ${anchor.label} (${selectedLevel}/100).`, { client_id: clientId });
       showToast('Tone saved.', 'success');
+      setSavedLevel(selectedLevel);
       await fetchData();
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Could not save tone.', 'error');
     }
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    showToast('Copied to clipboard', 'success');
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('Copied to clipboard.', 'success');
+    } catch {
+      showToast('Could not copy to the clipboard.', 'error');
+    }
   };
 
   const sendDraft = async (draft: EmailDraft) => {
     try {
-      const { error } = await supabase.functions.invoke('dispatch-email', {
-        body: { draftId: draft.id }
+      if (!client?.contact_email) throw new Error('Add the client email address before sending.');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.provider_token) throw new Error('Gmail is not connected. Sign out and reconnect with Google.');
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-gmail`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          to: client.contact_email,
+          subject: draft.subject,
+          body: draft.body,
+          providerToken: session.provider_token,
+        }),
       });
-      if (error) throw error;
-      showToast('Email sent successfully', 'success');
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        throw new Error(errorBody.error || `Gmail send failed (${response.status})`);
+      }
+      const { error: updateError } = await supabase.from('email_drafts').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', draft.id);
+      if (updateError) throw updateError;
+      showToast('Email sent via Gmail.', 'success');
       await fetchData();
     } catch (err) {
       console.error('Failed to dispatch email:', err);
-      showToast('Failed to send email', 'error');
+      showToast(err instanceof Error ? err.message : 'Could not send email. Check the Gmail connection.', 'error');
     }
   };
 
   const saveEdit = async (draft: EmailDraft) => {
-    await supabase.from('email_drafts').update({ body: editBody }).eq('id', draft.id);
+    const { error } = await supabase.from('email_drafts').update({ body: editBody }).eq('id', draft.id);
+    if (error) {
+      showToast(`Could not save the draft. ${error.message}`, 'error');
+      return;
+    }
     setEditingDraft(null);
-    showToast('Draft updated', 'success');
+    showToast('Draft updated.', 'success');
     await fetchData();
   };
 
@@ -128,11 +168,14 @@ export function ClientTones() {
         },
         body: JSON.stringify({ text: playgroundInput, tone: toneName }),
       });
-      if (!res.ok) throw new Error('Analysis failed');
+      if (!res.ok) {
+        const errorBody = await res.json().catch(() => ({}));
+        throw new Error(errorBody.error || `Analysis failed (${res.status})`);
+      }
       const data = await res.json();
       setPlaygroundResult(data);
-    } catch {
-      showToast('Analysis failed', 'error');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Analysis failed.', 'error');
     } finally {
       setIsAnalyzing(false);
     }
@@ -140,63 +183,49 @@ export function ClientTones() {
 
   const [isScraping, setIsScraping] = useState(false);
   const [realEmails, setRealEmails] = useState<GmailMessage[]>([]);
+  const [gmailError, setGmailError] = useState('');
+  const [lastGmailCheck, setLastGmailCheck] = useState<Date | null>(null);
   const lastEmailCountRef = useRef(0);
   const stopPollingRef = useRef(false);
 
   const fetchRealEmails = useCallback(async (silent = true) => {
     if (!client || stopPollingRef.current) return;
     if (!silent) setIsScraping(true);
+    setGmailError('');
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      
-      let data: GmailResponse;
+      // Supabase exposes Google's short-lived provider token only for OAuth sessions.
       if (!session?.provider_token) {
-        // Skip network request entirely if we don't have the token to avoid 500 logs
-        data = {
-          emails: [{
-            id: 'mock-' + Date.now(),
-            subject: 'Re: Overdue Invoice #INV-2026-001',
-            snippet: "Hi, sorry for the delay. We are waiting on budget approval and will send the payment next Tuesday.",
-            from: client?.contact_email || 'client@example.com',
-            date: new Date().toLocaleDateString()
-          }]
-        };
-      } else {
-        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scrape-gmail`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${session?.access_token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            clientEmail: client?.contact_email || 'client@example.com',
-            providerToken: session?.provider_token,
-          }),
-        });
-        
-        if (!res.ok) {
-          // If the real API fails (e.g., expired token, missing scopes), stop polling so we don't spam the console!
-          stopPollingRef.current = true;
-          data = {
-            emails: [{
-              id: 'mock-' + Date.now(),
-              subject: 'Re: Overdue Invoice #INV-2026-001',
-              snippet: "Hi, sorry for the delay. We are waiting on budget approval and will send the payment next Tuesday.",
-              from: client?.contact_email || 'client@example.com',
-              date: new Date().toLocaleDateString()
-            }]
-          };
-        } else {
-          data = await res.json() as GmailResponse;
-        }
+        stopPollingRef.current = true;
+        setGmailError('Gmail is not connected. Sign out and reconnect with Google to grant email access.');
+        return;
       }
+
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scrape-gmail`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          clientEmail: client.contact_email,
+          providerToken: session.provider_token,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorBody = await res.json().catch(() => ({}));
+        throw new Error(errorBody.error || `Gmail sync failed (${res.status})`);
+      }
+      const data = await res.json() as GmailResponse;
+      setLastGmailCheck(new Date());
       if (data.emails && data.emails.length > 0) {
         setRealEmails(data.emails);
         
         // Auto-draft if a NEW email arrives!
         if (data.emails.length > lastEmailCountRef.current) {
            if (lastEmailCountRef.current > 0) {
-             showToast('New email detected! Auto-drafting response...', 'success');
+             showToast('New client reply detected.', 'success');
            } else if (!silent) {
              showToast('Gmail messages imported.', 'success');
            }
@@ -208,8 +237,11 @@ export function ClientTones() {
       } else {
         if (!silent) showToast('No relevant emails found.', 'success');
       }
-    } catch {
-      if (!silent) showToast('Failed to scrape Gmail', 'error');
+    } catch (err) {
+      stopPollingRef.current = true;
+      const message = err instanceof Error ? err.message : 'Gmail sync failed.';
+      setGmailError(message);
+      if (!silent) showToast(message, 'error');
     } finally {
       setIsScraping(false);
     }
@@ -220,18 +252,29 @@ export function ClientTones() {
       fetchRealEmails(true);
       const interval = setInterval(() => {
         fetchRealEmails(true);
-      }, 5000); // Poll every 5 seconds for the hackathon demo!
+      }, 30_000);
       return () => clearInterval(interval);
     }
   }, [client, fetchRealEmails]);
 
-  if (loading || !client) return <PageLoadingState title="Loading AI Inbox" message="Preparing tone preferences and email context..." />;
+  if (loading) return <PageLoadingState title="Loading AI Inbox" message="Preparing tone preferences and email context..." />;
+  if (!client) return <ErrorState message={dataError ? `Could not load this client. ${dataError}` : 'Client not found.'} onRetry={fetchData} />;
 
   return (
     <div className="app-page max-w-4xl pb-10">
-      <Breadcrumbs items={[{ label: 'Dashboard', href: '/dashboard' }, { label: client.name, href: `/dashboard/client/${client.id}` }, { label: 'Tones' }]} />
-      <h1 className="font-display text-2xl font-semibold text-cadence-text mb-2">Tones & Automations</h1>
-      <p className="text-sm text-cadence-secondary mb-6">Choose how Cadence communicates with {client.name}. Cadence can also recommend a tone based on the relationship.</p>
+      <Breadcrumbs items={[{ label: 'Dashboard', href: '/dashboard' }, { label: client.name, href: `/dashboard/client/${client.id}` }, { label: 'AI Inbox & Tone' }]} />
+      <h1 className="font-display text-2xl font-semibold text-cadence-text mb-2">AI Inbox & Tone</h1>
+      <p className="text-sm text-cadence-secondary mb-6">Review client replies and choose how Cadence communicates with {client.name}.</p>
+
+      {dataError && (
+        <div className="mb-6 flex flex-col gap-3 rounded-xl border border-cadence-danger/20 bg-cadence-dangerSoft p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-medium text-cadence-danger">Some inbox data could not be refreshed.</p>
+            <p className="mt-1 text-xs text-cadence-secondary">{dataError}</p>
+          </div>
+          <button onClick={fetchData} className="btn-secondary self-start sm:self-auto">Try again</button>
+        </div>
+      )}
 
       {client.is_repeat && (
         <div className="card p-4 mb-4 flex items-start gap-3">
@@ -244,26 +287,16 @@ export function ClientTones() {
       )}
 
       <div className="card p-5 mb-10">
-        <div className="flex items-center justify-between gap-3 mb-3">
+        <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <p className="text-sm font-medium text-cadence-text">{getToneAnchor(selectedLevel).label}</p>
-            <p className="text-xs text-cadence-muted mt-1">Client baseline · {selectedLevel}/100</p>
+            <p className="text-xs font-mono uppercase tracking-wider text-cadence-muted">Client tone baseline</p>
+            {selectedLevel !== savedLevel && <p className="mt-1 text-xs font-medium text-cadence-warning">Unsaved change</p>}
           </div>
-          <button onClick={saveTone} className="btn-primary text-xs">Save tone</button>
+          <button onClick={saveTone} disabled={selectedLevel === savedLevel} className="btn-primary text-xs disabled:cursor-not-allowed disabled:opacity-50">
+            {selectedLevel === savedLevel ? 'Tone saved' : 'Save tone'}
+          </button>
         </div>
-        <input
-          aria-label="Client communication tone"
-          className="w-full accent-cadence-accent"
-          type="range"
-          min="0"
-          max="100"
-          value={selectedLevel}
-          onChange={(event) => setSelectedLevel(normalizeToneLevel(Number(event.target.value)))}
-        />
-        <div className="mt-2 flex justify-between text-2xs text-cadence-muted">
-          {TONE_ANCHORS.map((anchor) => <span key={anchor.level} title={anchor.label}>{anchor.level}</span>)}
-        </div>
-        {getToneAnchor(selectedLevel).key === 'modest' && <p className="mt-3 text-xs text-cadence-muted">Modest sits between Friendly and Formal at 40/100.</p>}
+        <ToneSlider value={selectedLevel} onChange={setSelectedLevel} label="Client communication tone" />
       </div>
 
       <div className="mb-10">
@@ -273,16 +306,16 @@ export function ClientTones() {
             <h2 className="font-display text-xl font-semibold text-cadence-text">Interactive Draft Playground</h2>
           </div>
           <button 
-            onClick={() => fetchRealEmails(false)}
+            onClick={() => { stopPollingRef.current = false; void fetchRealEmails(false); }}
             disabled={isScraping}
             className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-2 border-cadence-border"
           >
             {isScraping ? <Loader2 className="w-3 h-3 animate-spin" /> : <svg className="w-3.5 h-3.5 text-cadence-muted" viewBox="0 0 24 24"><path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/></svg>}
-            Import Gmail Context
+            Refresh Gmail
           </button>
         </div>
         <p className="text-sm text-cadence-secondary mb-4">
-          Cadence AI actively monitors threads for replies. When a client replies, Cadence auto-drafts a response using your selected psychology tone for your approval.
+          Cadence checks the connected Gmail account for client replies and prepares a response in your selected tone for review.
         </p>
         <div className="card p-5">
           <div className="flex items-center justify-between mb-4 border-b border-cadence-border pb-4">
@@ -292,18 +325,27 @@ export function ClientTones() {
                </div>
                <div>
                  <p className="text-sm font-medium text-cadence-text">{client.name} <span className="text-cadence-muted text-xs font-normal">via Gmail</span></p>
-                 <p className="text-xs text-cadence-muted">Active Thread: Invoice #INV-2026-001</p>
+                 <p className="text-xs text-cadence-muted">{client.contact_email || 'No client email address saved'}</p>
                </div>
              </div>
              <div className="flex items-center gap-2">
                <span className="relative flex w-2 h-2 shrink-0">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full w-2 h-2 bg-green-500"></span>
+                  {!gmailError && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>}
+                  <span className={`relative inline-flex rounded-full w-2 h-2 ${gmailError ? 'bg-cadence-warning' : 'bg-green-500'}`}></span>
                </span>
-               <span className="text-xs text-cadence-muted font-medium">Auto-Monitoring</span>
+               <span className="text-xs text-cadence-muted font-medium">{gmailError ? 'Connection needed' : 'Watching for replies'}</span>
              </div>
           </div>
+          {gmailError && (
+            <div className="mb-4 rounded-lg border border-cadence-danger/20 bg-cadence-dangerSoft p-3 text-sm text-cadence-danger">
+              <p className="font-medium">Could not refresh Gmail</p>
+              <p className="mt-1 text-xs text-cadence-secondary">{gmailError}</p>
+              <button onClick={() => { stopPollingRef.current = false; void fetchRealEmails(false); }} className="mt-2 text-xs font-medium underline">Try again</button>
+            </div>
+          )}
+          {lastGmailCheck && <p className="mb-3 text-xs text-cadence-muted">Last checked {lastGmailCheck.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>}
           <div className="mb-4 space-y-4">
+             {!gmailError && realEmails.length === 0 && <p className="rounded-lg bg-cadence-surface2 p-4 text-sm text-cadence-muted">No matching client replies found yet.</p>}
              {realEmails.map((email, idx) => (
                 <div key={email.id || idx} className="bg-cadence-surface2 rounded-2xl rounded-tl-sm p-4 border border-cadence-border max-w-[85%]">
                    <p className="text-xs font-medium text-cadence-text mb-1">{email.from} <span className="text-cadence-muted font-normal ml-2">{email.date}</span></p>
@@ -313,7 +355,7 @@ export function ClientTones() {
              ))}
           </div>
           <div className="mb-4">
-             <p className="text-xs font-mono uppercase text-cadence-muted mb-2">Simulate Client Reply</p>
+             <p className="text-xs font-mono uppercase text-cadence-muted mb-2">Client reply or email context</p>
              <textarea
                className="w-full text-sm leading-relaxed p-3 border border-cadence-border rounded-lg bg-cadence-surface focus:ring-1 focus:ring-cadence-accent outline-none text-cadence-text resize-none"
                rows={3}
@@ -327,7 +369,7 @@ export function ClientTones() {
             disabled={isAnalyzing || !playgroundInput.trim()}
             className="w-full bg-cadence-accent hover:bg-opacity-90 text-cadence-accentFg font-medium rounded-lg text-sm px-4 py-2.5 text-center flex items-center justify-center disabled:opacity-50"
           >
-            {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Simulate AI Auto-Draft'}
+            {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Analyze reply and draft'}
           </button>
 
           {playgroundResult && (
@@ -364,6 +406,7 @@ export function ClientTones() {
                         return;
                       }
                       const { data: { session } } = await supabase.auth.getSession();
+                      if (!session?.provider_token) throw new Error('Gmail is not connected. Sign out and reconnect with Google.');
                       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-gmail`, {
                         method: 'POST',
                         headers: {
@@ -377,10 +420,13 @@ export function ClientTones() {
                           providerToken: session?.provider_token
                         }),
                       });
-                      if (!res.ok) throw new Error('Failed to send');
-                      showToast('Email sent securely via Gmail!', 'success');
-                    } catch {
-                      showToast('Failed to send email. Check Gmail scopes.', 'error');
+                      if (!res.ok) {
+                        const errorBody = await res.json().catch(() => ({}));
+                        throw new Error(errorBody.error || `Gmail send failed (${res.status})`);
+                      }
+                      showToast('Email sent via Gmail.', 'success');
+                    } catch (err) {
+                      showToast(err instanceof Error ? err.message : 'Could not send email.', 'error');
                     }
                   }} 
                   className="bg-cadence-accent text-cadence-accentFg px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-opacity-90 w-full justify-center"
@@ -402,7 +448,7 @@ export function ClientTones() {
           </div>
         ) : (
           <div className="space-y-6">
-            {drafts.map((draft) => (
+            {drafts.slice(0, visibleDraftCount).map((draft) => (
               <div key={draft.id}>
                 <p className="text-xs font-mono uppercase tracking-widest text-cadence-muted mb-2 block">
                   Drafted email <span className="normal-case text-cadence-secondary ml-1">· tone: {getToneAnchor(draft.tone_level).label} · {draft.tone_level}/100</span>
@@ -426,11 +472,11 @@ export function ClientTones() {
                     </div>
                   )}
 
-                  <div className="flex gap-2 mt-4 pt-3 border-t border-cadence-border border-opacity-50">
+                  <div className="mt-4 flex flex-wrap gap-2 border-t border-cadence-border border-opacity-50 pt-3">
                     {editingDraft === draft.id ? (
                       <>
                         <button onClick={() => setEditingDraft(null)} className="px-3 py-1.5 text-sm font-medium rounded-lg border border-cadence-border bg-cadence-surface text-cadence-secondary hover:text-cadence-text">Cancel</button>
-                        <button onClick={() => saveEdit(draft)} className="px-3 py-1.5 text-sm font-medium rounded-lg bg-cadence-accent text-cadence-accentFg hover:bg-cadence-accent/90">Save Edit</button>
+                        <button onClick={() => saveEdit(draft)} className="px-3 py-1.5 text-sm font-medium rounded-lg bg-cadence-accent text-cadence-accentFg hover:bg-cadence-accent/90">Save edit</button>
                       </>
                     ) : (
                       <>
@@ -440,7 +486,7 @@ export function ClientTones() {
                         <button onClick={() => { setEditingDraft(draft.id); setEditBody(draft.body); }} className="px-3 py-1.5 text-sm font-medium rounded-lg border border-cadence-border bg-cadence-surface text-cadence-secondary hover:text-cadence-text flex items-center gap-1.5">
                           <Edit2 className="w-3.5 h-3.5" /> Edit
                         </button>
-                        <div className="ml-auto flex items-center gap-2">
+                        <div className="flex items-center gap-2 sm:ml-auto">
                           {draft.status === 'sent' && (
                             <span className="text-xs font-medium text-cadence-success flex items-center gap-1 bg-cadence-successSoft px-2 py-1 rounded-md">
                               <Check className="w-3.5 h-3.5" /> Sent
@@ -460,6 +506,9 @@ export function ClientTones() {
                 </div>
               </div>
             ))}
+            {drafts.length > visibleDraftCount && (
+              <button onClick={() => setVisibleDraftCount((count) => count + 5)} className="btn-secondary mx-auto block">Load more drafts</button>
+            )}
           </div>
         )}
       </div>

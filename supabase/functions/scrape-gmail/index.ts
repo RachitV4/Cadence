@@ -14,19 +14,13 @@ serve(async (req) => {
     const { clientEmail, providerToken, subjectQuery } = await req.json();
     
     if (!providerToken) {
-      // For hackathon: if token is missing, return a mock email so the UI doesn't crash!
-      return new Response(JSON.stringify({ 
-        emails: [{
-          id: 'mock-1',
-          subject: 'Re: Overdue Invoice #INV-2026-001',
-          snippet: "Hi, sorry for the delay. We are waiting on budget approval.",
-          from: clientEmail,
-          date: new Date().toISOString()
-        }]
-      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ error: 'Google OAuth token is required to check Gmail.' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    // Call actual Gmail API
+    // Query only this client's thread candidates; message bodies are not persisted here.
     let query = `from:${clientEmail} OR to:${clientEmail}`;
     if (subjectQuery) {
       query += ` subject:(${subjectQuery})`;
@@ -45,6 +39,8 @@ serve(async (req) => {
     const searchData = await searchRes.json();
     const messages = searchData.messages || [];
 
+    // Metadata format keeps polling lightweight while still providing enough context
+    // for the inbox and reply-aware drafting flow.
     const emails = [];
     for (const msg of messages) {
       const msgRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date&metadataHeaders=Message-ID`, {
@@ -54,10 +50,11 @@ serve(async (req) => {
       });
       const msgData = await msgRes.json();
       
-      const subjectHeader = msgData.payload.headers.find((h: any) => h.name === 'Subject');
-      const fromHeader = msgData.payload.headers.find((h: any) => h.name === 'From');
-      const dateHeader = msgData.payload.headers.find((h: any) => h.name === 'Date');
-      const messageIdHeader = msgData.payload.headers.find((h: any) => h.name === 'Message-ID' || h.name === 'Message-Id');
+      const headers = (msgData.payload?.headers || []) as Array<{ name: string; value: string }>;
+      const subjectHeader = headers.find((header) => header.name === 'Subject');
+      const fromHeader = headers.find((header) => header.name === 'From');
+      const dateHeader = headers.find((header) => header.name === 'Date');
+      const messageIdHeader = headers.find((header) => header.name === 'Message-ID' || header.name === 'Message-Id');
 
       emails.push({
         id: msg.id,

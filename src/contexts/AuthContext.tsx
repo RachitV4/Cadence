@@ -33,6 +33,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
+  // Organization membership is the application-level tenant boundary. Load it
+  // immediately after authentication before rendering protected data screens.
   const loadProfileAndOrg = useCallback(async (userId: string) => {
     const { data: profileData } = await supabase
       .from('profiles')
@@ -132,6 +134,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// The hook and provider intentionally share this module so they use the same context instance.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   return useContext(AuthContext);
 }

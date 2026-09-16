@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 
 export function Settings() {
-  const { organization } = useAuth();
   const { showToast } = useToast();
   const [slackUrl, setSlackUrl] = useState('');
 

@@ -108,7 +108,7 @@ export function ClientProfile() {
             }}
             className="btn-secondary text-sm"
           >
-            Close Project
+            Close project
           </button>
           <button 
             onClick={async () => {
@@ -143,7 +143,7 @@ export function ClientProfile() {
           <button 
             onClick={async () => {
               try {
-                showToast('Running batch analysis...', 'info');
+                showToast('Preparing a consolidated follow-up...', 'info');
                 const { data: { session } } = await supabase.auth.getSession();
                 const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/batch-negotiate`, {
                   method: 'POST',
@@ -153,9 +153,12 @@ export function ClientProfile() {
                   },
                   body: JSON.stringify({ clientId: client.id, organizationId: organization?.id }),
                 });
-                if (!res.ok) throw new Error('No overdue invoices found for this client.');
+                if (!res.ok) {
+                  const errorBody = await res.json().catch(() => ({}));
+                  throw new Error(errorBody.error || 'Could not prepare a consolidated follow-up.');
+                }
                 const data = await res.json();
-                showToast(`Successfully batched ${data.invoicesCount} invoices!`, 'success');
+                showToast(`Consolidated ${data.invoicesCount} overdue invoices into one draft.`, 'success');
               } catch (e) {
                 showToast(e instanceof Error ? e.message : 'Batch negotiation failed.', 'error');
               }
@@ -163,7 +166,7 @@ export function ClientProfile() {
             className="btn-secondary"
           >
             <svg className="w-4 h-4 mr-2 text-cadence-muted" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 14h-2v-2h2zm0-4h-2V7h2z"/></svg>
-            Batch Negotiate
+            Prepare consolidated follow-up
           </button>
           <button
             onClick={() => setDeleteOpen(true)}
@@ -219,7 +222,7 @@ export function ClientProfile() {
         </Link>
         <Link to={`/dashboard/client/${client.id}/tones`} className="card p-4 hover:border-cadence-accent transition-colors flex items-center gap-3">
           <MessageSquare className="w-5 h-5 text-cadence-accent" />
-          <div className="flex-1"><p className="text-sm font-medium text-cadence-text">AI Inbox</p><p className="text-xs text-cadence-muted">{tone?.selected_tone?.replace('_', ' / ') || 'Not set'}</p></div>
+          <div className="flex-1"><p className="text-sm font-medium text-cadence-text">AI Inbox & Tone</p><p className="text-xs text-cadence-muted">{tone?.selected_tone?.replace('_', ' / ') || 'Tone not set'}</p></div>
           <ArrowRight className="w-4 h-4 text-cadence-muted" />
         </Link>
         <Link to={`/dashboard/client/${client.id}/activity`} className="card p-4 hover:border-cadence-accent transition-colors flex items-center gap-3">

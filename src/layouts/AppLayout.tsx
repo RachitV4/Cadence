@@ -30,6 +30,7 @@ export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const [clients, setClients] = useState<SidebarClient[]>([]);
   const [clientsLoading, setClientsLoading] = useState(true);
   const [theme, setTheme] = useState<ThemeName>(getInitialTheme);
@@ -88,6 +89,7 @@ export function AppLayout() {
 
   useEffect(() => {
     setSidebarOpen(false);
+    setThemeMenuOpen(false);
   }, [location.pathname]);
 
   useEffect(() => {
@@ -129,7 +131,7 @@ export function AppLayout() {
         </div>
 
         <div className="flex-1 overflow-y-auto scrollbar-thin px-3 py-4">
-          <Link to="/dashboard" className={cn('flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors mb-1', isActive('/dashboard') && path === '/dashboard' ? 'bg-cadence-accentSoft text-cadence-accent font-medium' : 'text-cadence-secondary hover:bg-cadence-surface2')}>
+          <Link to="/dashboard" className={cn('flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors mb-1', isActive('/dashboard') && path === '/dashboard' ? 'bg-cadence-accentSoft text-cadence-accent font-medium ring-1 ring-cadence-accentLine' : 'text-cadence-secondary hover:bg-cadence-surface2')}>
             <LayoutDashboard className="w-4 h-4" /> Dashboard
           </Link>
           <Link to="/dashboard/client/new" className={cn('flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors mb-1', isActive('/dashboard/client/new') ? 'bg-cadence-accentSoft text-cadence-accent font-medium' : 'text-cadence-secondary hover:bg-cadence-surface2')}>
@@ -155,7 +157,7 @@ export function AppLayout() {
                     className={cn(
                       'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors',
                       isActive(`/dashboard/client/${client.id}`)
-                        ? 'bg-cadence-accentSoft text-cadence-accent font-medium'
+                        ? 'bg-cadence-accentSoft text-cadence-accent font-medium ring-1 ring-cadence-accentLine'
                         : 'text-cadence-secondary hover:bg-cadence-surface2'
                     )}
                   >
@@ -178,7 +180,7 @@ export function AppLayout() {
                         <Receipt className="w-3.5 h-3.5" /> Invoices
                       </Link>
                       <Link to={`/dashboard/client/${client.id}/tones`} className={cn('flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-colors', isActive(`/dashboard/client/${client.id}/tones`) ? 'text-cadence-accent font-medium' : 'text-cadence-muted hover:text-cadence-secondary')}>
-                        <MessageSquare className="w-3.5 h-3.5" /> Tones
+                        <MessageSquare className="w-3.5 h-3.5" /> AI Inbox & Tone
                       </Link>
                       <Link to={`/dashboard/client/${client.id}/activity`} className={cn('flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-colors', isActive(`/dashboard/client/${client.id}/activity`) ? 'text-cadence-accent font-medium' : 'text-cadence-muted hover:text-cadence-secondary')}>
                         <Activity className="w-3.5 h-3.5" /> Activity
@@ -232,18 +234,35 @@ export function AppLayout() {
               <span className="hidden sm:inline">Search</span>
               <kbd className="hidden sm:inline text-xs font-mono bg-cadence-surface2 border border-cadence-border rounded px-1.5 py-0.5">⌘K</kbd>
             </button>
-            <button
-              onClick={() => {
-                const next = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
-                setTheme(next);
-              }}
-              className="p-2 text-cadence-secondary hover:text-cadence-text hover:bg-cadence-surface2 rounded-lg transition-colors"
-              title="Toggle theme"
-            >
-              {theme === 'light' && <Sun className="w-5 h-5" />}
-              {theme === 'dark' && <Moon className="w-5 h-5" />}
-              {theme === 'parchment' && <Feather className="w-5 h-5" />}
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setThemeMenuOpen((open) => !open)}
+                className="p-2 text-cadence-secondary hover:text-cadence-text hover:bg-cadence-surface2 rounded-lg transition-colors"
+                title="Choose appearance"
+                aria-label="Choose appearance"
+                aria-expanded={themeMenuOpen}
+              >
+                {theme === 'light' && <Sun className="w-5 h-5" />}
+                {theme === 'dark' && <Moon className="w-5 h-5" />}
+                {theme === 'parchment' && <Feather className="w-5 h-5" />}
+              </button>
+              {themeMenuOpen && (
+                <div className="absolute right-0 top-11 z-40 w-36 rounded-xl border border-cadence-border bg-cadence-surface p-1.5 shadow-xl">
+                  {THEMES.map((option) => (
+                    <button
+                      key={option}
+                      onClick={() => { setTheme(option); setThemeMenuOpen(false); }}
+                      className={cn('flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs capitalize transition-colors', option === theme ? 'bg-cadence-accentSoft text-cadence-accent font-medium' : 'text-cadence-secondary hover:bg-cadence-surface2')}
+                    >
+                      {option === 'light' && <Sun className="h-3.5 w-3.5" />}
+                      {option === 'dark' && <Moon className="h-3.5 w-3.5" />}
+                      {option === 'parchment' && <Feather className="h-3.5 w-3.5" />}
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <Link to="/dashboard/notifications" className="relative text-cadence-secondary hover:text-cadence-text p-2 transition-colors">
               <Bell className="w-5 h-5" />
               {unreadCount > 0 && (

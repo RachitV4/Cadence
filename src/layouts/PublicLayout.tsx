@@ -2,10 +2,43 @@ import { Link, Outlet, NavLink } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { Menu, X, ChevronDown, Sun, Moon, Feather } from 'lucide-react';
 
+type ThemeName = 'light' | 'dark' | 'parchment';
+const THEMES: ThemeName[] = ['light', 'dark', 'parchment'];
+
+function getInitialTheme(): ThemeName {
+  const saved = localStorage.getItem('cadence-theme');
+  return THEMES.includes(saved as ThemeName) ? saved as ThemeName : 'light';
+}
+
+function ThemePicker({ theme, onChange, compact = false }: { theme: ThemeName; onChange: (theme: ThemeName) => void; compact?: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen((value) => !value)} className={`${compact ? 'p-1.5' : 'p-2'} rounded-lg text-cadence-secondary transition-colors hover:bg-cadence-surface2 hover:text-cadence-text`} title="Choose appearance" aria-label="Choose appearance" aria-expanded={open}>
+        {theme === 'light' && <Sun className="w-5 h-5" />}
+        {theme === 'dark' && <Moon className="w-5 h-5" />}
+        {theme === 'parchment' && <Feather className="w-5 h-5" />}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-10 z-50 w-36 rounded-xl border border-cadence-border bg-cadence-surface p-1.5 shadow-xl">
+          {THEMES.map((option) => (
+            <button key={option} onClick={() => { onChange(option); setOpen(false); }} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs capitalize ${option === theme ? 'bg-cadence-accentSoft font-medium text-cadence-accent' : 'text-cadence-secondary hover:bg-cadence-surface2'}`}>
+              {option === 'light' && <Sun className="h-3.5 w-3.5" />}
+              {option === 'dark' && <Moon className="h-3.5 w-3.5" />}
+              {option === 'parchment' && <Feather className="h-3.5 w-3.5" />}
+              {option}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function PublicLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [resourcesOpen, setResourcesOpen] = useState(false);
-  const [theme, setTheme] = useState<'light' | 'dark' | 'parchment'>(() => (localStorage.getItem('cadence-theme') as any) || 'light');
+  const [theme, setTheme] = useState<ThemeName>(getInitialTheme);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -75,19 +108,7 @@ export function PublicLayout() {
             </div>
           </div>
           <div className="hidden md:flex items-center gap-3">
-            <button
-              onClick={() => {
-                const themes = ['light', 'dark', 'parchment'];
-                const next = themes[(themes.indexOf(theme) + 1) % themes.length];
-                setTheme(next as any);
-              }}
-              className="p-2 text-cadence-secondary hover:text-cadence-text hover:bg-cadence-surface2 rounded-lg transition-colors mr-2"
-              title="Toggle theme"
-            >
-              {theme === 'light' && <Sun className="w-5 h-5" />}
-              {theme === 'dark' && <Moon className="w-5 h-5" />}
-              {theme === 'parchment' && <Feather className="w-5 h-5" />}
-            </button>
+            <ThemePicker theme={theme} onChange={setTheme} />
             <Link to="/login" className="text-sm text-cadence-secondary hover:text-cadence-text transition-colors">
               Log in
             </Link>
@@ -96,19 +117,7 @@ export function PublicLayout() {
             </Link>
           </div>
           <div className="md:hidden flex items-center gap-3">
-            <button
-              onClick={() => {
-                const themes = ['light', 'dark', 'parchment'];
-                const next = themes[(themes.indexOf(theme) + 1) % themes.length];
-                setTheme(next as any);
-              }}
-              className="p-1.5 text-cadence-secondary hover:text-cadence-text hover:bg-cadence-surface2 rounded-lg transition-colors"
-              title="Toggle theme"
-            >
-              {theme === 'light' && <Sun className="w-5 h-5" />}
-              {theme === 'dark' && <Moon className="w-5 h-5" />}
-              {theme === 'parchment' && <Feather className="w-5 h-5" />}
-            </button>
+            <ThemePicker theme={theme} onChange={setTheme} compact />
             <Link to="/signup" className="btn-primary text-xs px-3 py-1.5">
               Get started
             </Link>

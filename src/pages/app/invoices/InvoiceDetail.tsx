@@ -3,9 +3,10 @@ import { useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
-import { logActivity, formatCurrency, formatDate, getInvoiceDueStatus, getInvoiceAge } from '@/lib/utils';
+import { logActivity, formatCurrency, formatDate, formatRelativeTime, getInvoiceDueStatus, getInvoiceAge } from '@/lib/utils';
 import { getSmartAlerts } from '@/lib/smartAlerts';
-import { getToneAnchor, normalizeToneLevel, TONE_ANCHORS, toneLevelFromKey } from '@/lib/toneSimulator';
+import { getToneAnchor, normalizeToneLevel, toneLevelFromKey } from '@/lib/toneSimulator';
+import { ToneSlider } from '@/components/ToneSlider';
 import { PageLoadingState, ErrorState, Breadcrumbs, StatusBadge } from '@/components/ui/Primitives';
 import { Modal } from '@/components/ui/Modal';
 import type { Invoice, Client, Contract, ContractTerm, InvoiceAnalysis, EmailDraft, PaymentEvent, PaymentPromise } from '@/types';
@@ -79,7 +80,8 @@ export function InvoiceDetail() {
     setAllInvoices((allInvRes.data as Invoice[]) || []);
     setPaymentPromise(promiseRes.data as PaymentPromise | null);
 
-    // Aggregate all contracts for the client to build the Knowledge Graph & MSA/SOW Hierarchy
+    // Aggregate all client agreements so advice and drafting can consider both the
+    // parent MSA and later SOW overrides.
     const { data: contractData } = await supabase.from('contracts').select('*').eq('client_id', inv.client_id).order('created_at', { ascending: true });
     if (contractData && contractData.length > 0) {
       // Treat the oldest contract as the parent MSA, but pass ALL terms to the AI
@@ -100,6 +102,8 @@ export function InvoiceDetail() {
 
   useEffect(() => {
     if (!recommendedToneKey) return;
+    // AI advice initializes the control once per analysis; subsequent slider changes
+    // remain an invoice-specific user override.
     const level = toneLevelFromKey(recommendedToneKey as ToneKey);
     setRecommendedToneLevel(level);
     setToneLevel(level);
@@ -201,6 +205,8 @@ export function InvoiceDetail() {
 
       const result = await response.json();
 
+      // The edge function generates content; the browser owns draft persistence so
+      // create and regenerate share the same database record and UI state.
       const draftValues = {
         subject: result.subject || '',
         body: result.body || '',
@@ -231,6 +237,7 @@ export function InvoiceDetail() {
       const averageTone = Number(clientTone?.average_tone_level ?? 50);
       const nextToneLevel = normalizeToneLevel(toneLevel);
       const nextSampleCount = draft && sampleCount > 0 ? sampleCount : sampleCount + 1;
+      // Regeneration replaces the existing sample rather than double-counting it.
       const nextAverage = draft && sampleCount > 0
         ? (averageTone * sampleCount - draft.tone_level + nextToneLevel) / sampleCount
         : (averageTone * sampleCount + nextToneLevel) / nextSampleCount;
@@ -242,7 +249,9 @@ export function InvoiceDetail() {
         average_tone_level: nextAverage,
         tone_sample_count: nextSampleCount,
       }, { onConflict: 'client_id' });
-      if (toneError) throw new Error(`Saving client tone history failed: ${toneError.message}`);
+      if (toneError) {
+        showToast(`Draft saved, but tone history was not updated. ${toneError.message}`, 'info');
+      }
 
       await logActivity(organization.id, draft ? 'draft_regenerated' : 'draft_created', draft ? 'Email draft regenerated' : 'Email draft created', `Draft created for ${invoice.invoice_number}.`, { client_id: client.id, invoice_id: invoice.id });
       showToast(draft ? 'Email draft regenerated.' : 'Email draft created.', 'success');
@@ -256,16 +265,24 @@ export function InvoiceDetail() {
     }
   };
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     if (!draft) return;
     const text = `Subject: ${draft.subject}\n\n${draft.body}`;
-    navigator.clipboard.writeText(text);
-    showToast('Copied to clipboard.', 'success');
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('Copied to clipboard.', 'success');
+    } catch {
+      showToast('Could not copy the draft.', 'error');
+    }
   };
 
   const handleSaveDraft = async () => {
     if (!draft || !organization) return;
-    await supabase.from('email_drafts').update({ subject: editSubject, body: editBody }).eq('id', draft.id);
+    const { error: saveError } = await supabase.from('email_drafts').update({ subject: editSubject, body: editBody }).eq('id', draft.id);
+    if (saveError) {
+      showToast(`Could not save the draft. ${saveError.message}`, 'error');
+      return;
+    }
     await logActivity(organization.id, 'draft_edited', 'Draft edited', `Email draft updated.`, { client_id: client!.id, invoice_id: invoice!.id });
     showToast('Draft saved.', 'success');
     setEditModalOpen(false);
@@ -278,13 +295,21 @@ export function InvoiceDetail() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.provider_token) {
-        throw new Error('No Google OAuth provider_token found. Please log in with Google.');
+        throw new Error('Gmail is not connected. Sign out and reconnect with Google to grant email access.');
       }
-      const payload: any = {
-        to: client?.contact_email || 'client@example.com',
+      if (!client?.contact_email) throw new Error('Add the client email address before sending.');
+      const payload: {
+        to: string;
+        subject: string;
+        body: string;
+        providerToken: string;
+        threadId?: string;
+        inReplyTo?: string;
+      } = {
+        to: client.contact_email,
         subject: draft.subject,
         body: draft.body,
-        providerToken: session?.provider_token
+        providerToken: session.provider_token,
       };
       
       if (emailThread && emailThread.length > 0) {
@@ -293,7 +318,6 @@ export function InvoiceDetail() {
         if (recentMsg.threadId) payload.threadId = recentMsg.threadId;
         if (recentMsg.messageId) payload.inReplyTo = recentMsg.messageId;
       }
-
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-gmail`, {
         method: 'POST',
         headers: {
@@ -302,7 +326,10 @@ export function InvoiceDetail() {
         },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error('Failed to send');
+      if (!res.ok) {
+        const errorBody = await res.json().catch(() => ({}));
+        throw new Error(errorBody.error || `Gmail send failed (${res.status})`);
+      }
       
       await supabase.from('email_drafts').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', draft.id);
       await logActivity(organization.id, 'email_sent', 'Email sent via Gmail', `${draft.subject} sent to ${client?.contact_email}.`, { client_id: client!.id, invoice_id: invoice!.id });
@@ -343,8 +370,8 @@ export function InvoiceDetail() {
   };
 
   const openPromiseModal = () => {
-    setPromiseDate(new Date().toISOString().slice(0, 10));
-    setPromiseNotes('');
+    setPromiseDate(paymentPromise?.promised_date || new Date().toISOString().slice(0, 10));
+    setPromiseNotes(paymentPromise?.notes || '');
     setPromiseModalOpen(true);
   };
 
@@ -352,7 +379,7 @@ export function InvoiceDetail() {
     if (!invoice || !client || !organization || !promiseDate) return;
     setSavingPromise(true);
     try {
-      const { error: promiseError } = await supabase.from('payment_promises').insert({
+      const values = {
         invoice_id: invoice.id,
         organization_id: organization.id,
         client_id: client.id,
@@ -360,11 +387,14 @@ export function InvoiceDetail() {
         status: 'pending',
         source: 'manual',
         notes: promiseNotes.trim(),
-      });
+      };
+      const { error: promiseError } = paymentPromise
+        ? await supabase.from('payment_promises').update(values).eq('id', paymentPromise.id)
+        : await supabase.from('payment_promises').insert(values);
       if (promiseError) throw promiseError;
 
       await logActivity(organization.id, 'payment_promise_recorded', 'Payment promise recorded', `Payment promised for ${formatDate(promiseDate)}.`, { client_id: client.id, invoice_id: invoice.id });
-      showToast('Payment promise recorded.', 'success');
+      showToast(paymentPromise ? 'Payment promise updated.' : 'Payment promise recorded.', 'success');
       setPromiseModalOpen(false);
       await fetchData();
     } catch (err) {
@@ -382,7 +412,6 @@ export function InvoiceDetail() {
   const invoiceAge = getInvoiceAge(invoice.due_date);
   const previousInvoices = allInvoices.filter((i) => i.id !== invoice.id);
   const smartAlerts = getSmartAlerts(invoice, paymentHistory, paymentPromise);
-  const selectedTone = getToneAnchor(toneLevel);
   const recommendedTone = getToneAnchor(recommendedToneLevel);
 
   return (
@@ -447,7 +476,7 @@ export function InvoiceDetail() {
             </div>
             <div className="flex justify-between text-sm border-b border-cadence-border pb-2">
               <dt className="text-cadence-muted">Amount</dt>
-              <dd className="font-mono text-cadence-text">{formatCurrency(invoice.amount)}</dd>
+              <dd className="break-words text-right font-mono text-cadence-text">{formatCurrency(invoice.amount, invoice.currency)}</dd>
             </div>
             <div className="flex justify-between text-sm border-b border-cadence-border pb-2">
               <dt className="text-cadence-muted">Due date</dt>
@@ -469,7 +498,8 @@ export function InvoiceDetail() {
               <div>
                 <h2 className="text-sm font-medium text-cadence-text">{alert.title}</h2>
                 <p className="mt-1 text-sm text-cadence-secondary">{alert.message}</p>
-                <p className="mt-2 text-xs text-cadence-muted">{alert.recommendedAction}</p>
+                <p className="mt-2 text-xs font-medium text-cadence-muted">Recommended next step</p>
+                <p className="mt-0.5 text-xs text-cadence-secondary">{alert.recommendedAction}</p>
               </div>
             </div>
           </div>
@@ -481,16 +511,16 @@ export function InvoiceDetail() {
               <h2 className="text-sm font-medium text-cadence-text">Payment promise</h2>
               <p className="text-xs text-cadence-muted mt-1">Record the date the client says payment will be made.</p>
             </div>
-            {paymentPromise?.status === 'pending' ? (
-              <StatusBadge status={paymentPromise.status} />
-            ) : (
-              <button onClick={openPromiseModal} className="btn-secondary text-xs">Record promise</button>
-            )}
+            <div className="flex items-center gap-2">
+              {paymentPromise && <StatusBadge status={paymentPromise.status} />}
+              <button onClick={openPromiseModal} className="btn-secondary text-xs">{paymentPromise ? 'Edit promise' : 'Record promise'}</button>
+            </div>
           </div>
           {paymentPromise ? (
             <div className="rounded-lg bg-cadence-surface2 p-3 text-sm">
               <p className="text-cadence-text">Promised for <span className="font-mono">{formatDate(paymentPromise.promised_date)}</span></p>
               {paymentPromise.notes && <p className="mt-1 text-xs text-cadence-muted">{paymentPromise.notes}</p>}
+              <p className="mt-2 text-[10px] text-cadence-muted">Updated {formatRelativeTime(paymentPromise.updated_at)}</p>
             </div>
           ) : <p className="text-xs text-cadence-muted">No payment promise has been recorded.</p>}
         </div>
@@ -508,6 +538,9 @@ export function InvoiceDetail() {
                   <span className={`badge ${analysis.risk_level === 'low' ? 'badge-success' : analysis.risk_level === 'medium' ? 'badge-warning' : 'badge-danger'}`}>
                     {analysis.risk_level === 'low' ? 'Low risk' : analysis.risk_level === 'medium' ? 'Medium risk' : 'High risk'}
                   </span>
+                  <p className="mt-1 text-[10px] text-cadence-muted" title={new Date(analysis.updated_at).toLocaleString()}>
+                    Updated {formatRelativeTime(analysis.updated_at)}
+                  </p>
                 </div>
               </div>
               <button 
@@ -570,26 +603,16 @@ export function InvoiceDetail() {
               <Mail className="w-4 h-4 text-cadence-accent" />
               <h2 className="text-sm font-medium text-cadence-text">Tone</h2>
             </div>
-            <div className="flex items-center justify-between gap-3 mb-3">
-              <p className="text-sm text-cadence-secondary">{selectedTone.label} <span className="font-mono">{toneLevel}/100</span></p>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs text-cadence-muted">AI recommendation: {recommendedTone.label}</p>
+              {toneLevel !== recommendedToneLevel && <span className="badge-warning">Invoice override</span>}
             </div>
-            <input
-              aria-label="Email tone"
-              className="w-full accent-cadence-accent"
-              type="range"
-              min="0"
-              max="100"
+            <ToneSlider
               value={toneLevel}
-              onChange={(event) => setToneLevel(normalizeToneLevel(Number(event.target.value)))}
+              onChange={setToneLevel}
+              recommendedLevel={recommendedToneLevel}
+              label="Email tone"
             />
-            <div className="mt-2 flex justify-between text-2xs text-cadence-muted">
-              {TONE_ANCHORS.map((anchor) => <span key={anchor.level} title={anchor.label}>{anchor.level}</span>)}
-            </div>
-            <p className="mt-3 text-xs text-cadence-muted">
-              {toneLevel === recommendedToneLevel ? 'Using Cadence’s AI recommendation.' : 'You have overridden Cadence’s AI recommendation for this invoice.'}
-            </p>
-            {selectedTone.key === 'modest' && <p className="mt-1 text-xs text-cadence-muted">Modest sits between Friendly and Formal at 40/100.</p>}
             <div className="mt-4 flex flex-wrap gap-2">
               <button onClick={() => setToneLevel(recommendedToneLevel)} className="btn-secondary text-xs">Use AI recommendation</button>
             </div>
@@ -599,10 +622,11 @@ export function InvoiceDetail() {
         {/* Email draft */}
         {draft ? (
           <div className="card p-5">
-            <div className="flex items-center gap-2 mb-3 justify-between">
-              <div className="flex items-center gap-2">
+            <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <Mail className="w-4 h-4 text-cadence-muted" />
                 <h2 className="text-sm font-medium text-cadence-text">Drafted email</h2>
+                <span className="text-xs text-cadence-muted" title={new Date(draft.updated_at).toLocaleString()}>Updated {formatRelativeTime(draft.updated_at)}</span>
                 {emailThread.length > 0 && (
                   <span className="ml-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-[10px] font-bold text-purple-400 uppercase tracking-wider">
                     <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM4 10a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2zm16 0a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2z"/><path d="M12 8v12M8 14l4-4 4 4"/></svg>
@@ -610,20 +634,20 @@ export function InvoiceDetail() {
                   </span>
                 )}
               </div>
-              <div className="flex gap-2 items-center">
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                 <span className="text-xs text-cadence-muted">Tone: {draft.tone_level !== undefined ? getToneAnchor(draft.tone_level).label : draft.tone}</span>
                 {draft.status === 'sent' && <span className="badge-success"><Check className="w-3 h-3" /> Sent</span>}
+                {draft.status !== 'sent' && (
+                  <button
+                    onClick={() => { void generateDraft(); }}
+                    disabled={drafting}
+                    className="btn-secondary text-xs px-2.5 py-1.5 flex items-center gap-1.5"
+                  >
+                    {drafting ? <Loader2 className="w-3 h-3 animate-spin" /> : <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" /><path d="M16 21v-5h5" /></svg>}
+                    Regenerate
+                  </button>
+                )}
               </div>
-              {draft.status !== 'sent' && (
-                <button 
-                  onClick={() => { void generateDraft(); }}
-                  disabled={drafting}
-                  className="btn-secondary text-xs px-2.5 py-1.5 flex items-center gap-1.5"
-                >
-                  {drafting ? <Loader2 className="w-3 h-3 animate-spin" /> : <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" /><path d="M16 21v-5h5" /></svg>}
-                  Regenerate
-                </button>
-              )}
             </div>
             {emailThread.length > 0 && (
               <div className="mb-4">
@@ -692,6 +716,8 @@ export function InvoiceDetail() {
                     onClick={async () => {
                       try {
                         const { data: { session } } = await supabase.auth.getSession();
+                        if (!session?.provider_token) throw new Error('Google Calendar is not connected. Sign out and reconnect with Google.');
+                        if (!client.contact_email) throw new Error('Add the client email address before scheduling a meeting.');
                         const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/schedule-meet`, {
                           method: 'POST',
                           headers: {
@@ -699,28 +725,32 @@ export function InvoiceDetail() {
                             'Content-Type': 'application/json',
                           },
                           body: JSON.stringify({
-                            clientEmail: client.contact_email || 'client@example.com',
+                            clientEmail: client.contact_email,
                             clientName: client.name,
                             providerToken: session?.provider_token
                           }),
                         });
-                        if (!res.ok) throw new Error('Failed to schedule');
+                        if (!res.ok) {
+                          const errorBody = await res.json().catch(() => ({}));
+                          throw new Error(errorBody.error || `Calendar request failed (${res.status})`);
+                        }
                         const data = await res.json();
                         
                         const meetAppend = `\n\nI've placed a 15-minute hold on my calendar for tomorrow to sync on this. You can join the Google Meet here: ${data.meetLink}`;
                         const newBody = draft.body + meetAppend;
                         
-                        await supabase.from('email_drafts').update({ body: newBody }).eq('id', draft.id);
-                        showToast('Google Meet scheduled and added to draft!', 'success');
+                        const { error: updateError } = await supabase.from('email_drafts').update({ body: newBody }).eq('id', draft.id);
+                        if (updateError) throw updateError;
+                        showToast('Google Meet scheduled and added to the draft.', 'success');
                         await fetchData();
-                      } catch {
-                        showToast('Failed to schedule Meet. Check Calendar scopes.', 'error');
+                      } catch (err) {
+                        showToast(err instanceof Error ? err.message : 'Could not schedule the meeting.', 'error');
                       }
                     }} 
                     className="btn-secondary border-cadence-accent text-cadence-accent hover:bg-cadence-accentSoft"
                   >
                     <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24"><path fill="currentColor" d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-1.99.9-1.99 2L3 20a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zM9 14H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2z"/></svg>
-                    Insert Google Meet
+                    Add Google Meet
                   </button>
                   <button onClick={handleSend} disabled={sending} className="btn-primary">
                     {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
@@ -734,6 +764,8 @@ export function InvoiceDetail() {
                     try {
                       showToast('Scanning inbox for replies...', 'info');
                       const { data: { session } } = await supabase.auth.getSession();
+                      if (!session?.provider_token) throw new Error('Gmail is not connected. Sign out and reconnect with Google.');
+                      if (!client.contact_email) throw new Error('Add the client email address before checking replies.');
                       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scrape-gmail`, {
                         method: 'POST',
                         headers: {
@@ -741,27 +773,30 @@ export function InvoiceDetail() {
                           'Content-Type': 'application/json',
                         },
                         body: JSON.stringify({
-                          clientEmail: client.contact_email || 'client@example.com',
+                          clientEmail: client.contact_email,
                           providerToken: session?.provider_token,
                           subjectQuery: draft.subject.replace(/re:|fwd:/gi, '').trim()
                         }),
                       });
-                      if (!res.ok) throw new Error('Failed to check replies');
+                      if (!res.ok) {
+                        const errorBody = await res.json().catch(() => ({}));
+                        throw new Error(errorBody.error || `Gmail check failed (${res.status})`);
+                      }
                       const data = await res.json();
                       if (data.emails && data.emails.length > 1) {
-                        showToast(`Found ${data.emails.length - 1} replies! Auto-drafting response...`, 'success');
+                        showToast(`Found ${data.emails.length - 1} replies. Preparing a response...`, 'success');
                         setEmailThread(data.emails);
                         await generateDraft(data.emails);
                       } else {
                         showToast('No new replies found yet.', 'info');
                       }
-                    } catch {
-                      showToast('Failed to check inbox.', 'error');
+                    } catch (err) {
+                      showToast(err instanceof Error ? err.message : 'Could not check Gmail.', 'error');
                     }
                   }} 
                   className="btn-secondary border-[#4285F4] text-[#4285F4] hover:bg-[#4285F4]/10"
                 >
-                  <Mail className="w-4 h-4 mr-2" /> Check for Replies
+                  <Mail className="w-4 h-4 mr-2" /> Check for replies
                 </button>
               )}
             </div>
@@ -826,7 +861,7 @@ export function InvoiceDetail() {
         </div>
       </Modal>
 
-      <Modal open={promiseModalOpen} onClose={() => setPromiseModalOpen(false)} title="Record payment promise">
+      <Modal open={promiseModalOpen} onClose={() => setPromiseModalOpen(false)} title={paymentPromise ? 'Edit payment promise' : 'Record payment promise'}>
         <div className="space-y-4">
           <div>
             <label className="label">Promised payment date</label>
@@ -839,7 +874,7 @@ export function InvoiceDetail() {
           <div className="flex gap-2">
             <button onClick={() => setPromiseModalOpen(false)} className="btn-secondary">Cancel</button>
             <button onClick={savePaymentPromise} disabled={!promiseDate || savingPromise} className="btn-primary">
-              {savingPromise && <Loader2 className="w-4 h-4 animate-spin" />} Record promise
+              {savingPromise && <Loader2 className="w-4 h-4 animate-spin" />} {paymentPromise ? 'Save changes' : 'Record promise'}
             </button>
           </div>
         </div>

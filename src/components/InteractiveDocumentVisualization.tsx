@@ -18,6 +18,8 @@ interface PdfTextItem {
   height?: number;
 }
 
+// PDF.js emits text as positioned fragments, so source matching must tolerate
+// punctuation and whitespace differences introduced during extraction.
 const normalizeForMatch = (value: string) => value
   .toLowerCase()
   .replace(/[“”"']/g, '')
@@ -40,6 +42,7 @@ export function InteractiveDocumentVisualization({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [renderVersion, setRenderVersion] = useState(0);
+  const [loadVersion, setLoadVersion] = useState(0);
   const highlightTimeoutRef = useRef<number | undefined>(undefined);
   const highlightedSourceRef = useRef('');
 
@@ -59,6 +62,7 @@ export function InteractiveDocumentVisualization({
       setLoading(true);
 
       try {
+        // Keep the PDF renderer and worker out of the initial application bundle.
         const pdfjs = await import('pdfjs-dist');
         const pdfWorker = await import(
           'pdfjs-dist/build/pdf.worker.min.mjs?url'
@@ -94,7 +98,7 @@ export function InteractiveDocumentVisualization({
     return () => {
       cancelled = true;
     };
-  }, [fileUrl, isPdf]);
+  }, [fileUrl, isPdf, loadVersion]);
 
   useEffect(() => {
     let renderTask: RenderTask | undefined;
@@ -138,8 +142,13 @@ export function InteractiveDocumentVisualization({
         window.clearTimeout(highlightTimeoutRef.current);
         try {
           const sourceToHighlight = sourceText?.trim() || '';
-          if (!sourceToHighlight) return;
+          if (!sourceToHighlight) {
+            highlightedSourceRef.current = '';
+            return;
+          }
 
+          // Prefer an exact normalized passage; distinctive words are a fallback
+          // for PDFs whose visual text is split differently from stored source text.
           const textContent = await page.getTextContent();
           const entries = (textContent.items as PdfTextItem[])
             .map((item) => ({
@@ -181,7 +190,10 @@ export function InteractiveDocumentVisualization({
           });
           context.restore();
           highlightTimeoutRef.current = window.setTimeout(
-            () => setRenderVersion((version) => version + 1),
+            () => {
+              highlightedSourceRef.current = '';
+              setRenderVersion((version) => version + 1);
+            },
             3_000,
           );
         }
@@ -200,6 +212,8 @@ export function InteractiveDocumentVisualization({
     renderPage();
 
     return () => {
+      // A page change can overtake an in-flight render; cancel it to avoid painting
+      // stale content into the shared canvas.
       renderTask?.cancel();
     };
   }, [pdf, activePage, loadedPages, sourceText, renderVersion]);
@@ -228,7 +242,7 @@ export function InteractiveDocumentVisualization({
             Document verification
           </p>
 
-          <p className="truncate text-sm font-medium text-cadence-text">
+          <p className="truncate text-sm font-medium text-cadence-text" title={fileName || undefined}>
             {fileName || 'Select a contract to preview'}
           </p>
         </div>
@@ -260,9 +274,9 @@ export function InteractiveDocumentVisualization({
         )}
       </div>
 
-      <div ref={viewerRef} className="relative flex min-h-[420px] max-h-[680px] items-start justify-center overflow-auto bg-cadence-surface2 p-3 sm:min-h-[500px] sm:p-4 lg:min-h-[560px] scrollbar-thin">
+      <div ref={viewerRef} className={`relative flex max-h-[680px] items-start justify-center overflow-auto bg-cadence-surface2 p-3 sm:p-4 scrollbar-thin ${fileUrl ? 'min-h-[420px] sm:min-h-[500px] lg:min-h-[560px]' : 'min-h-[260px] sm:min-h-[320px]'}`}>
         {!fileUrl ? (
-          <div className="flex h-[380px] flex-col items-center justify-center text-center text-cadence-muted sm:h-[460px] lg:h-[520px]">
+          <div className="flex min-h-[230px] flex-col items-center justify-center text-center text-cadence-muted sm:min-h-[280px]">
             <FileText className="mb-3 h-9 w-9" />
 
             <p className="text-sm">
@@ -276,7 +290,8 @@ export function InteractiveDocumentVisualization({
           </div>
         ) : error ? (
           <div className="w-full self-center rounded-lg bg-cadence-dangerSoft p-5 text-center text-sm text-cadence-danger">
-            {error}
+            <p>{error}</p>
+            <button onClick={() => setLoadVersion((version) => version + 1)} className="btn-secondary mt-3 text-xs">Try preview again</button>
           </div>
         ) : (
           <>

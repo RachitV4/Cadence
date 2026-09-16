@@ -9,13 +9,17 @@ import { Modal } from '@/components/ui/Modal';
 import { InteractiveDocumentVisualization } from '@/components/InteractiveDocumentVisualization';
 import type { Client, Contract, ContractTerm, ContractFinding, ContractPage } from '@/types';
 import { TERM_LABELS } from '@/types';
-import { Upload, FileText, Loader2, Check, Edit, Eye, AlertTriangle, X, ChevronDown, Search, Trash2 } from 'lucide-react';
+import { Upload, FileText, Loader2, Check, Edit, Eye, AlertTriangle, X, ChevronDown, Search, Trash2, RefreshCw } from 'lucide-react';
+
+type TermFilter = 'all' | 'needs_review' | 'confirmed' | 'missing';
+type ContractSort = 'newest' | 'oldest' | 'name';
 
 export function ClientContracts() {
   const { clientId } = useParams();
   const { organization } = useAuth();
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const handleUploadRef = useRef<(file: File) => void>(() => undefined);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [terms, setTerms] = useState<ContractTerm[]>([]);
   const [findings, setFindings] = useState<ContractFinding[]>([]);
@@ -36,88 +40,83 @@ export function ClientContracts() {
   const [clientName, setClientName] = useState('Client');
   const [contractToDelete, setContractToDelete] = useState<Contract | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const latestContract = contracts[0];
+  const [termFilter, setTermFilter] = useState<TermFilter>('all');
+  const [contractSort, setContractSort] = useState<ContractSort>('newest');
+  const [termsExpanded, setTermsExpanded] = useState(true);
+  const [findingsExpanded, setFindingsExpanded] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [dataError, setDataError] = useState('');
+  const [activeContractId, setActiveContractId] = useState<string | null>(null);
+  const [visibleContractCount, setVisibleContractCount] = useState(5);
+  // Terms, findings, pages, and preview state always belong to this one selection.
+  const activeContract = contracts.find((contract) => contract.id === activeContractId) || contracts[0];
 
   const fetchData = useCallback(async () => {
     if (!clientId || !organization) return;
+    setDataError('');
     const [contractsRes, clientRes] = await Promise.all([
       supabase.from('contracts').select('*').eq('client_id', clientId).eq('organization_id', organization.id).order('created_at', { ascending: false }),
       supabase.from('clients').select('name').eq('id', clientId).eq('organization_id', organization.id).maybeSingle(),
     ]);
+    if (contractsRes.error || clientRes.error) {
+      setDataError(contractsRes.error?.message || clientRes.error?.message || 'Could not load contracts.');
+    }
     setClientName((clientRes.data as Pick<Client, 'name'> | null)?.name || 'Client');
     const contractList = (contractsRes.data as Contract[]) || [];
     setContracts(contractList);
     if (contractList.length > 0) {
-      const latest = contractList[0];
+      // Preserve the user's selection across refreshes; otherwise select the newest.
+      const selected = contractList.find((contract) => contract.id === activeContractId) || contractList[0];
+      if (selected.id !== activeContractId) setActiveContractId(selected.id);
       const [termsRes, findingsRes, pagesRes] = await Promise.all([
-        supabase.from('contract_terms').select('*').eq('contract_id', latest.id),
-        supabase.from('contract_findings').select('*').eq('contract_id', latest.id).order('severity', { ascending: false }),
-        supabase.from('contract_pages').select('*').eq('contract_id', latest.id).order('page_number', { ascending: true }),
+        supabase.from('contract_terms').select('*').eq('contract_id', selected.id),
+        supabase.from('contract_findings').select('*').eq('contract_id', selected.id).order('severity', { ascending: false }),
+        supabase.from('contract_pages').select('*').eq('contract_id', selected.id).order('page_number', { ascending: true }),
       ]);
+      const detailError = termsRes.error || findingsRes.error || pagesRes.error;
+      if (detailError) setDataError(detailError.message);
       setTerms((termsRes.data as ContractTerm[]) || []);
       setFindings((findingsRes.data as ContractFinding[]) || []);
       setPages((pagesRes.data as ContractPage[]) || []);
     } else {
+      setActiveContractId(null);
       setTerms([]);
       setFindings([]);
       setPages([]);
       setFileUrl(null);
     }
     setLoading(false);
-  }, [clientId, organization]);
+  }, [activeContractId, clientId, organization]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
   useEffect(() => {
-    const handleDragOver = (e: DragEvent) => {
-      e.preventDefault();
-      setIsDragging(true);
-    };
-    const handleDragLeave = (e: DragEvent) => {
-      e.preventDefault();
-      if (e.clientX === 0 && e.clientY === 0) setIsDragging(false);
-    };
-    const handleDrop = async (e: DragEvent) => {
-      e.preventDefault();
-      setIsDragging(false);
-      const file = e.dataTransfer?.files[0];
-      if (file) {
-        handleUpload(file);
-      }
-    };
-    window.addEventListener('dragover', handleDragOver);
-    window.addEventListener('dragleave', handleDragLeave);
-    window.addEventListener('drop', handleDrop);
-    return () => {
-      window.removeEventListener('dragover', handleDragOver);
-      window.removeEventListener('dragleave', handleDragLeave);
-      window.removeEventListener('drop', handleDrop);
-    };
-  }, [clientId, organization]);
+    if (!activeContract?.file_path) return;
 
-  useEffect(() => {
-    if (!latestContract?.file_path) return;
-
+    // Contract storage is private, so the viewer receives a short-lived signed URL.
     let cancelled = false;
-    supabase.storage.from('contracts').createSignedUrl(latestContract.file_path, 60 * 60)
+    setFileUrl(null);
+    supabase.storage.from('contracts').createSignedUrl(activeContract.file_path, 60 * 60)
       .then(({ data }) => {
         if (!cancelled && data?.signedUrl) setFileUrl(data.signedUrl);
       });
 
     return () => { cancelled = true; };
-  }, [latestContract?.file_path]);
+  }, [activeContract?.file_path]);
 
   useEffect(() => {
     setActivePage(1);
     setSourceText('');
-  }, [latestContract?.id]);
+  }, [activeContract?.id]);
 
   const showSource = (page: number | null, text: string) => {
-    if (page) setActivePage(page);
-    setSourceText(text);
+    // Clear first so clicking the same clause twice replays the three-second highlight.
+    setSourceText('');
     window.requestAnimationFrame(() => {
+      if (page) setActivePage(page);
+      setSourceText(text);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
   };
@@ -146,6 +145,7 @@ export function ClientContracts() {
         .select()
         .single();
       if (insertError) throw insertError;
+      setActiveContractId(contractData.id);
       await logActivity(organization.id, 'contract_uploaded', 'Contract uploaded', `${file.name} uploaded.`, { client_id: clientId, contract_id: contractData.id });
       showToast('Contract uploaded. Processing...', 'success');
       await processContract(contractData.id, file);
@@ -157,6 +157,7 @@ export function ClientContracts() {
 
   const processContract = async (contractId: string, file: File) => {
     try {
+      // Persist each pipeline stage so refreshes and failures remain visible in the UI.
       await supabase.from('contracts').update({ status: 'processing', processing_stage: 'validating' }).eq('id', contractId);
       await logActivity(organization!.id, 'contract_processing', 'Contract processing', 'Validating file...', { contract_id: contractId }, {});
       await fetchData();
@@ -235,6 +236,8 @@ export function ClientContracts() {
       await supabase.from('contracts').update({ processing_stage: 'analyzing', status: 'analyzing' }).eq('id', contractId);
       await fetchData();
 
+      // Store searchable page chunks in full, but bound the synchronous AI request to
+      // avoid edge-function timeouts on long agreements.
       const allText = pageRecords.map((p) => p.text_content).join('\n\n');
       const analysisText = allText.slice(0, 25_000); // Fit into Llama 3 8k token context window
       const chunkSize = 4000;
@@ -369,6 +372,33 @@ export function ClientContracts() {
     });
   };
 
+  handleUploadRef.current = handleUpload;
+
+  useEffect(() => {
+    const handleDragOver = (event: DragEvent) => {
+      event.preventDefault();
+      setIsDragging(true);
+    };
+    const handleDragLeave = (event: DragEvent) => {
+      event.preventDefault();
+      if (event.clientX === 0 && event.clientY === 0) setIsDragging(false);
+    };
+    const handleDrop = (event: DragEvent) => {
+      event.preventDefault();
+      setIsDragging(false);
+      const file = event.dataTransfer?.files[0];
+      if (file) handleUploadRef.current(file);
+    };
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('dragleave', handleDragLeave);
+    window.addEventListener('drop', handleDrop);
+    return () => {
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('dragleave', handleDragLeave);
+      window.removeEventListener('drop', handleDrop);
+    };
+  }, []);
+
   const deleteContract = async () => {
     if (!contractToDelete || !clientId || !organization || deleting) return;
     setDeleting(true);
@@ -390,7 +420,7 @@ export function ClientContracts() {
       ? await supabase.storage.from('contracts').remove([contractToDelete.file_path])
       : { error: null };
 
-    if (latestContract?.id === contractToDelete.id) setFileUrl(null);
+    if (activeContract?.id === contractToDelete.id) setFileUrl(null);
     setContractToDelete(null);
     setDeleting(false);
     await fetchData();
@@ -424,7 +454,33 @@ export function ClientContracts() {
     }
   };
 
+  const refreshData = async () => {
+    setRefreshing(true);
+    await fetchData();
+    setRefreshing(false);
+  };
+
   if (loading) return <PageLoadingState title="Loading contracts" message="Preparing documents and extracted terms..." />;
+
+  const termCounts = {
+    all: terms.length,
+    needs_review: terms.filter((term) => term.status === 'needs_review' || term.confidence === 'low').length,
+    confirmed: terms.filter((term) => term.confirmed).length,
+    missing: terms.filter((term) => term.status === 'not_found' || !term.term_value).length,
+  };
+  const filteredTerms = terms.filter((term) => {
+    if (termFilter === 'needs_review') return term.status === 'needs_review' || term.confidence === 'low';
+    if (termFilter === 'confirmed') return term.confirmed;
+    if (termFilter === 'missing') return term.status === 'not_found' || !term.term_value;
+    return true;
+  });
+  const sortedContracts = [...contracts].sort((a, b) => {
+    if (contractSort === 'name') return a.file_name.localeCompare(b.file_name);
+    const difference = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    return contractSort === 'oldest' ? difference : -difference;
+  });
+  const visibleContracts = sortedContracts.slice(0, visibleContractCount);
+  const confirmationProgress = terms.length ? Math.round((termCounts.confirmed / terms.length) * 100) : 0;
 
   return (
     <div className="app-page relative min-h-[calc(100vh-8rem)] pb-10">
@@ -467,8 +523,15 @@ export function ClientContracts() {
 
       <Breadcrumbs items={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Contracts' }]} />
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
-        <h1 className="font-display text-2xl font-semibold text-cadence-text">Contracts</h1>
-        <button 
+        <div>
+          <h1 className="font-display text-2xl font-semibold text-cadence-text">Contracts</h1>
+          {activeContract && <p className="mt-1 text-xs text-cadence-muted">Selected file updated {formatRelativeTime(activeContract.updated_at)}</p>}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={refreshData} disabled={refreshing} className="btn-secondary" title="Refresh contracts">
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} /> Refresh
+          </button>
+          <button
           onClick={async () => {
             try {
               showToast('Generating contract in Google Docs...', 'info');
@@ -496,16 +559,27 @@ export function ClientContracts() {
         >
           <svg className="w-4 h-4 text-[#4285F4]" viewBox="0 0 24 24"><path fill="currentColor" d="M14 2H6a2 2 0 0 0-2 2v16c0 1.11.89 2 2 2h12c1.11 0 2-.89 2-2V8l-6-6m4 18H6V4h7v5h5v11m-3-8.07V19H9v-5.07c0-1.07 1.06-1.61 1.82-1.07l1.18.83l1.18-.83c.76-.54 1.82 0 1.82 1.07Z"/></svg>
           Generate new via Docs
-        </button>
+          </button>
+        </div>
       </div>
+
+      {dataError && (
+        <div className="mb-6 flex flex-col gap-3 rounded-xl border border-cadence-danger/20 bg-cadence-dangerSoft p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-medium text-cadence-danger">Contracts could not be fully refreshed.</p>
+            <p className="mt-1 text-xs text-cadence-secondary">{dataError}</p>
+          </div>
+          <button onClick={refreshData} className="btn-secondary self-start sm:self-auto">Try again</button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] xl:gap-8">
         {/* Left Side: Document Preview */}
         <div className="min-w-0 lg:sticky lg:top-20 lg:self-start">
           <InteractiveDocumentVisualization
             fileUrl={fileUrl}
-            fileName={latestContract?.file_name || ''}
-            pageCount={latestContract?.page_count || 1}
+            fileName={activeContract?.file_name || ''}
+            pageCount={activeContract?.page_count || 1}
             activePage={activePage}
             sourceText={sourceText}
             onPageChange={(page) => {
@@ -558,17 +632,36 @@ export function ClientContracts() {
         <EmptyState icon={<FileText className="w-6 h-6" />} title="No contracts yet" description="Upload a signed contract and Cadence will extract the terms that matter." />
       ) : (
         <div className="space-y-6">
-          {contracts.map((contract) => (
-            <div key={contract.id} className="card p-5">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-cadence-muted">{contracts.length} {contracts.length === 1 ? 'contract' : 'contracts'}</p>
+            <label className="flex items-center gap-2 text-xs text-cadence-muted">
+              Sort
+              <select value={contractSort} onChange={(event) => { setContractSort(event.target.value as ContractSort); setVisibleContractCount(5); }} className="rounded-lg border border-cadence-border bg-cadence-surface px-2.5 py-1.5 text-xs text-cadence-text">
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="name">File name</option>
+              </select>
+            </label>
+          </div>
+          {visibleContracts.map((contract) => (
+            <div key={contract.id} className={`card p-5 ${contract.id === activeContract?.id ? 'ring-1 ring-cadence-accentLine' : ''}`}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+                <button onClick={() => {
+                  if (contract.id !== activeContract?.id) {
+                    setTerms([]);
+                    setFindings([]);
+                    setPages([]);
+                    setActiveContractId(contract.id);
+                  }
+                }} className="flex min-w-0 items-center gap-3 text-left" title="Select contract">
                   <FileText className="w-5 h-5 text-cadence-muted" />
-                  <div>
-                    <p className="text-sm font-medium text-cadence-text">{contract.file_name}</p>
+                  <div className="min-w-0">
+                    <p className="break-all text-sm font-medium text-cadence-text" title={contract.file_name}>{contract.file_name}</p>
                     <p className="text-xs text-cadence-muted">{formatFileSize(contract.file_size)} · {contract.page_count} pages · {formatRelativeTime(contract.created_at)}</p>
                   </div>
-                </div>
-                <div className="flex items-center gap-2">
+                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {contract.id === activeContract?.id && <span className="badge-accent">Selected</span>}
                   <StatusBadge status={contract.status} />
                   {contract.processing_stage && contract.status !== 'complete' && contract.status !== 'failed' && (
                     <span className="text-xs font-mono text-cadence-muted">{contract.processing_stage}</span>
@@ -591,7 +684,7 @@ export function ClientContracts() {
               )}
 
               {/* Processing center */}
-              {contract.status === 'processing' || contract.status === 'analyzing' ? (
+              {contract.id === activeContract?.id && (contract.status === 'processing' || contract.status === 'analyzing') ? (
                 <div className="rounded-lg bg-cadence-surface2 p-4 space-y-2 mb-4">
                   <p className="text-xs font-mono text-cadence-muted mb-2">PROCESSING</p>
                   {[
@@ -610,7 +703,7 @@ export function ClientContracts() {
               ) : null}
 
               {/* Semantic Search */}
-              {contract.status === 'complete' && (
+              {contract.id === activeContract?.id && contract.status === 'complete' && (
                 <div className="mt-4 mb-6 bg-cadence-surface2 p-5 rounded-xl border border-cadence-border shadow-sm">
                   <div className="flex items-center gap-2 mb-3">
                     <Search className="w-4 h-4 text-cadence-accent" />
@@ -633,6 +726,13 @@ export function ClientContracts() {
                       {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}
                     </button>
                   </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {['What are the payment terms?', 'When can either party terminate?', 'What is the liability cap?'].map((suggestion) => (
+                      <button key={suggestion} onClick={() => setSearchQuery(suggestion)} className="rounded-full border border-cadence-border px-2.5 py-1 text-[10px] text-cadence-muted hover:border-cadence-accent hover:text-cadence-accent">
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
                   {searchResult && (
                     <div className="mt-4 p-4 bg-cadence-surface border border-cadence-border rounded-lg text-sm text-cadence-text animate-fade-in shadow-sm">
                       <strong className="text-cadence-accent mb-2 block uppercase text-xs tracking-wider">AI Answer</strong>
@@ -643,11 +743,30 @@ export function ClientContracts() {
               )}
 
               {/* Terms */}
-              {contract.status === 'complete' && terms.length > 0 && (
+              {contract.id === activeContract?.id && contract.status === 'complete' && terms.length > 0 && (
                 <div className="mt-4">
-                  <h3 className="text-xs font-mono uppercase tracking-wider text-cadence-muted mb-3">Extracted terms</h3>
-                  <div className="grid sm:grid-cols-2 gap-3">
-                    {terms.map((term) => (
+                  <button onClick={() => setTermsExpanded((expanded) => !expanded)} className="mb-3 flex w-full items-center justify-between text-left">
+                    <div>
+                      <h3 className="text-xs font-mono uppercase tracking-wider text-cadence-muted">Extracted terms</h3>
+                      <p className="mt-1 text-xs text-cadence-secondary">{termCounts.confirmed} of {terms.length} confirmed · {confirmationProgress}% complete</p>
+                    </div>
+                    <ChevronDown className={`h-4 w-4 text-cadence-muted transition-transform ${termsExpanded ? 'rotate-180' : ''}`} />
+                  </button>
+                  <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-cadence-surface2" aria-label={`${confirmationProgress}% of terms confirmed`}>
+                    <div className="h-full rounded-full bg-cadence-success transition-all" style={{ width: `${confirmationProgress}%` }} />
+                  </div>
+                  {termsExpanded && <>
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {(['all', 'needs_review', 'confirmed', 'missing'] as TermFilter[]).map((filter) => (
+                      <button key={filter} onClick={() => setTermFilter(filter)} className={`rounded-full px-3 py-1.5 text-xs transition-colors ${termFilter === filter ? 'bg-cadence-accent text-cadence-accentFg' : 'bg-cadence-surface2 text-cadence-secondary hover:text-cadence-text'}`}>
+                        {filter === 'all' ? 'All' : filter === 'needs_review' ? 'Needs review' : filter === 'confirmed' ? 'Confirmed' : 'Not found'} ({termCounts[filter]})
+                      </button>
+                    ))}
+                  </div>
+                  {filteredTerms.length === 0 ? (
+                    <p className="rounded-lg bg-cadence-surface2 p-4 text-sm text-cadence-muted">No terms match this filter.</p>
+                  ) : <div className="grid sm:grid-cols-2 gap-3">
+                    {filteredTerms.map((term) => (
                       <div key={term.id} className="rounded-lg border border-cadence-border p-3">
                         <div className="flex items-start justify-between mb-1">
                           <span className="text-xs text-cadence-muted">{TERM_LABELS[term.term_key] || term.term_key}</span>
@@ -656,10 +775,10 @@ export function ClientContracts() {
                             {term.confidence === 'low' && <ConfidenceBadge confidence="low" />}
                           </div>
                         </div>
-                        <p className="text-sm font-medium text-cadence-text font-mono">{term.edited_value || term.term_value || '—'}</p>
+                        <p className="break-words text-sm font-medium text-cadence-text font-mono">{term.edited_value || term.term_value || '—'}</p>
                         {term.source_page && (
                           <button onClick={() => showSource(term.source_page, term.source_text)} className="text-xs text-cadence-accent hover:underline mt-1.5 flex items-center gap-1">
-                            <Eye className="w-3 h-3" /> Page {term.source_page}{term.source_section ? ` · ${term.source_section}` : ''}
+                            <Eye className="w-3 h-3" /> View clause · Page {term.source_page}{term.source_section ? ` · ${term.source_section}` : ''}
                           </button>
                         )}
                         <div className="flex gap-2 mt-2">
@@ -674,15 +793,19 @@ export function ClientContracts() {
                         </div>
                       </div>
                     ))}
-                  </div>
+                  </div>}
+                  </>}
                 </div>
               )}
 
               {/* Findings */}
-              {contract.status === 'complete' && findings.filter((f) => !f.dismissed).length > 0 && (
+              {contract.id === activeContract?.id && contract.status === 'complete' && findings.filter((f) => !f.dismissed).length > 0 && (
                 <div className="mt-6">
-                  <h3 className="text-xs font-mono uppercase tracking-wider text-cadence-muted mb-3">Worth a second look</h3>
-                  <div className="space-y-2">
+                  <button onClick={() => setFindingsExpanded((expanded) => !expanded)} className="mb-3 flex w-full items-center justify-between text-left">
+                    <h3 className="text-xs font-mono uppercase tracking-wider text-cadence-muted">Worth a second look ({findings.filter((finding) => !finding.dismissed).length})</h3>
+                    <ChevronDown className={`h-4 w-4 text-cadence-muted transition-transform ${findingsExpanded ? 'rotate-180' : ''}`} />
+                  </button>
+                  {findingsExpanded && <div className="space-y-2">
                     {findings.filter((f) => !f.dismissed).map((finding) => (
                       <div key={finding.id} className={`rounded-lg p-3 ${finding.severity === 'high' ? 'card-danger' : 'border border-cadence-border'}`}>
                         <button onClick={() => toggleFinding(finding.id)} className="w-full flex items-start justify-between gap-3 text-left">
@@ -710,7 +833,7 @@ export function ClientContracts() {
                             <div className="flex items-center gap-3">
                               {finding.source_page && (
                                 <button onClick={() => showSource(finding.source_page, finding.source_text)} className="text-xs text-cadence-accent hover:underline flex items-center gap-1">
-                                  <Eye className="w-3 h-3" /> Page {finding.source_page}{finding.source_section ? ` · ${finding.source_section}` : ''}
+                                   <Eye className="w-3 h-3" /> View clause · Page {finding.source_page}{finding.source_section ? ` · ${finding.source_section}` : ''}
                                 </button>
                               )}
                               <button onClick={() => dismissFinding(finding.id)} className="text-xs text-cadence-muted hover:text-cadence-danger flex items-center gap-1">
@@ -721,7 +844,7 @@ export function ClientContracts() {
                         )}
                       </div>
                     ))}
-                  </div>
+                  </div>}
                 </div>
               )}
 
@@ -732,6 +855,9 @@ export function ClientContracts() {
               )}
             </div>
           ))}
+          {sortedContracts.length > visibleContractCount && (
+            <button onClick={() => setVisibleContractCount((count) => count + 5)} className="btn-secondary mx-auto block">Load more contracts</button>
+          )}
         </div>
       )}
         </div>

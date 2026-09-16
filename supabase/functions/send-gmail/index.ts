@@ -35,7 +35,7 @@ serve(async (req) => {
     const message = messageParts.join('\n');
     const encodedMessage = btoa(unescape(encodeURIComponent(message))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-    const payload: any = { raw: encodedMessage };
+    const payload: { raw: string; threadId?: string } = { raw: encodedMessage };
     if (threadId) {
       payload.threadId = threadId;
     }

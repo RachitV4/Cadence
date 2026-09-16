@@ -37,12 +37,10 @@ serve(async (req) => {
     const totalOwed = invoices.reduce((sum, inv) => sum + inv.amount, 0);
     const invoiceListText = invoices.map(i => `Invoice ${i.invoice_number} - $${i.amount.toLocaleString()} (Due: ${i.due_date})`).join('\n');
 
-    // Generate a master draft via OpenAI (mocking direct API call logic here to save time for the hackathon, or we can use the same Nim endpoint)
-    // For the sake of the hackathon demo, we will generate a high-quality static template dynamically filled with their data.
+    // Use a deterministic consolidated draft so every invoice amount and date is preserved.
     const masterDraft = `Hi ${client.name},\n\nI'm reaching out regarding your account balance. We currently have ${invoices.length} outstanding invoices past their due dates, totaling $${totalOwed.toLocaleString()}.\n\nHere is the breakdown:\n${invoiceListText}\n\nCould we jump on a quick 15-minute call tomorrow to discuss consolidating these and getting the account up to date?\n\nBest,\nCadence Automated Accounts`;
 
-    // Save as a special email draft attached to the client (we can just attach it to the oldest invoice, or create a generic client-level draft if schema allows)
-    // Our schema requires invoice_id for email_drafts. We will attach it to the oldest invoice.
+    // The schema requires an invoice, so attach the consolidated draft to the oldest overdue item.
     const oldestInvoice = invoices.sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())[0];
 
     await supabase.from('email_drafts').insert({

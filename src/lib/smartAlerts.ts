@@ -10,6 +10,8 @@ export interface SmartAlert {
 const PRE_OVERDUE_WINDOW_DAYS = 3;
 const PAYMENT_DELAY_RISK_THRESHOLD_DAYS = 3;
 
+// This stays pure and deterministic so invoice screens and scheduled workflows can
+// evaluate the same payment evidence without calling an external service.
 export function getSmartAlerts(
   invoice: Invoice,
   paymentHistory: PaymentEvent[],
@@ -19,8 +21,10 @@ export function getSmartAlerts(
   if (invoice.payment_status === 'paid' || !invoice.due_date) return [];
 
   const alerts: SmartAlert[] = [];
+  // Normalize to local midnight so time-of-day and DST do not change a promise's day status.
   const currentDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
+  // A missed explicit promise is actionable even when no historical payments exist.
   if (paymentPromise?.status === 'pending') {
     const promisedDate = new Date(`${paymentPromise.promised_date}T00:00:00`);
     if (!Number.isNaN(promisedDate.getTime())) {
@@ -43,6 +47,7 @@ export function getSmartAlerts(
     }
   }
 
+  // Only completed payments are evidence of the client's historical payment delay.
   const paymentEvents = paymentHistory.filter((event) => event.event_type === 'payment_received' || event.event_type === 'invoice_paid');
   if (!paymentEvents.length) return alerts;
 

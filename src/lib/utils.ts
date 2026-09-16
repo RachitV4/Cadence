@@ -53,17 +53,24 @@ export function dedupeActivityEvents(events: ActivityEvent[], windowMs = 300_000
 }
 
 export function formatCurrency(amount: number, currency: string = 'USD'): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(amount);
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency || 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(Number.isFinite(amount) ? amount : 0);
+  } catch {
+    return `${currency || 'USD'} ${(Number.isFinite(amount) ? amount : 0).toLocaleString('en-US')}`;
+  }
 }
 
 export function formatDate(date: string | null): string {
   if (!date) return '—';
-  return new Date(date).toLocaleDateString('en-US', {
+  // Date-only database values represent calendar dates, not UTC instants.
+  const parsed = new Date(date.length === 10 ? `${date}T00:00:00` : date);
+  if (Number.isNaN(parsed.getTime())) return '—';
+  return parsed.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',

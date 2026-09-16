@@ -243,20 +243,6 @@ export interface Notification {
 
 export type ToneKey = 'humble' | 'casual_friendly' | 'formal' | 'strict' | 'modest';
 
-export interface ToneDefinition {
-  key: ToneKey;
-  name: string;
-  description: string;
-}
-
-export const TONES: ToneDefinition[] = [
-  { key: 'humble', name: 'Humble', description: 'Soft and deferential. Acknowledges the relationship without pressure.' },
-  { key: 'casual_friendly', name: 'Casual / Friendly', description: 'Warm and conversational. Treats this like a normal check-in.' },
-  { key: 'formal', name: 'Formal', description: 'Professional and structured. Clear references to terms and dates.' },
-  { key: 'strict', name: 'Strict', description: 'Direct and firm. References obligations and consequences plainly.' },
-  { key: 'modest', name: 'Modest', description: 'Measured and understated. States facts without insistence.' },
-];
-
 export const TERM_LABELS: Record<string, string> = {
   contract_type: 'Contract type',
   parties: 'Parties',

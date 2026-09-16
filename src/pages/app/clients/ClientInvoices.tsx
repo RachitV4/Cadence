@@ -3,13 +3,14 @@ import { useParams, Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
-import { logActivity, formatCurrency, formatDate, getInvoiceDueStatus } from '@/lib/utils';
+import { logActivity, formatCurrency, formatDate, formatRelativeTime, getInvoiceDueStatus } from '@/lib/utils';
 import { PageLoadingState, EmptyState, Breadcrumbs, ErrorState } from '@/components/ui/Primitives';
 import { Modal } from '@/components/ui/Modal';
-import type { Invoice, Contract, ContractTerm } from '@/types';
-import { Upload, Receipt, Loader2, ArrowRight, Edit, Check, AlertTriangle, Clock, Trash2 } from 'lucide-react';
-import * as mammoth from 'mammoth';
-import Tesseract from 'tesseract.js';
+import type { Invoice, Contract, ContractTerm, Client } from '@/types';
+import { Upload, Receipt, Loader2, ArrowRight, Edit, Check, AlertTriangle, Clock, Trash2, RefreshCw, Eye } from 'lucide-react';
+
+type InvoiceFilter = 'all' | 'overdue' | 'upcoming' | 'paid' | 'review';
+type InvoiceSort = 'newest' | 'due_date' | 'amount';
 
 export function ClientInvoices() {
   const { clientId } = useParams();
@@ -18,6 +19,7 @@ export function ClientInvoices() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
+  const [client, setClient] = useState<Client | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
@@ -31,19 +33,32 @@ export function ClientInvoices() {
   const [disputeEmail, setDisputeEmail] = useState<{ subject: string, body: string } | null>(null);
   const [invoiceToDelete, setInvoiceToDelete] = useState<Invoice | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [filter, setFilter] = useState<InvoiceFilter>('all');
+  const [sort, setSort] = useState<InvoiceSort>('newest');
+  const [visibleCount, setVisibleCount] = useState(8);
+  const [refreshing, setRefreshing] = useState(false);
+  const [previewInvoiceId, setPreviewInvoiceId] = useState<string | null>(null);
+  const [dataError, setDataError] = useState('');
 
   const fetchData = useCallback(async () => {
     if (!clientId || !organization) return;
-    const [invRes, contractRes] = await Promise.all([
+    setDataError('');
+    const [invRes, contractRes, clientRes] = await Promise.all([
       supabase.from('invoices').select('*').eq('client_id', clientId).order('created_at', { ascending: false }),
       supabase.from('contracts').select('*').eq('client_id', clientId).eq('status', 'complete'),
+      supabase.from('clients').select('*').eq('id', clientId).eq('organization_id', organization.id).maybeSingle(),
     ]);
+    if (invRes.error || contractRes.error || clientRes.error) {
+      setDataError(invRes.error?.message || contractRes.error?.message || clientRes.error?.message || 'Could not load invoices.');
+    }
     const contractsData = (contractRes.data as Contract[]) || [];
     setInvoices((invRes.data as Invoice[]) || []);
     setContracts(contractsData);
+    setClient(clientRes.data as Client | null);
     
     if (contractsData.length > 0) {
-      const { data: terms } = await supabase.from('contract_terms').select('*').in('contract_id', contractsData.map(c => c.id));
+      const { data: terms, error: termsError } = await supabase.from('contract_terms').select('*').in('contract_id', contractsData.map(c => c.id));
+      if (termsError) setDataError(termsError.message);
       setContractTerms((terms as ContractTerm[]) || []);
     }
     
@@ -61,6 +76,8 @@ export function ClientInvoices() {
     setError('');
     let invoiceId: string | null = null;
     try {
+      // Create the durable invoice record before extraction so failures can be shown
+      // and retried instead of silently losing the uploaded document.
       const fileId = crypto.randomUUID();
       const filePath = `${organization.id}/${clientId}/${fileId}-${file.name}`;
       const { error: uploadError } = await supabase.storage.from('invoices').upload(filePath, file);
@@ -84,7 +101,8 @@ export function ClientInvoices() {
       await logActivity(organization.id, 'invoice_uploaded', 'Invoice uploaded', `${file.name} uploaded.`, { client_id: clientId, invoice_id: invData.id });
       showToast('Invoice uploaded. Extracting details...', 'success');
 
-      // Extract text from file based on type
+      // Text extraction runs locally; only plain text and record identifiers cross
+      // the edge-function boundary for structured invoice analysis.
       let fullText = '';
       if (file.type === 'application/pdf') {
         const arrayBuffer = await file.arrayBuffer();
@@ -98,14 +116,16 @@ export function ClientInvoices() {
           fullText += textContent.items.map((item: unknown) => (item as { str?: string }).str || '').join(' ') + '\n';
         }
       } else if (file.name.endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        const mammoth = await import('mammoth');
         const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
         fullText = result.value;
       } else if (file.type === 'image/png' || file.type === 'image/jpeg' || file.type === 'image/jpg') {
+        const Tesseract = (await import('tesseract.js')).default;
         const result = await Tesseract.recognize(file, 'eng');
         fullText = result.data.text;
       }
 
-      // Call edge function for extraction
+      // Reject empty extraction before invoking AI so the user gets a precise error.
       if (!fullText.trim()) throw new Error('No readable text was extracted from this invoice');
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-invoice`;
       const response = await fetch(apiUrl, {
@@ -257,23 +277,27 @@ export function ClientInvoices() {
         body: JSON.stringify({
           invoiceId: inv.id,
           organizationId: organization?.id,
-          tone: 'strict',
-          clientName: 'Client',
+          toneLevel: 90,
+          clientName: client?.name || 'Client',
           invoiceNumber: inv.invoice_number,
           amount: inv.amount,
           dueDate: inv.due_date,
           advice: 'Draft an email pointing out the invoice discrepancy: ' + discrepancies.join(', '),
           explanation: 'The invoice violates the contract terms.',
           contractTerms: contractTerms.filter(t => t.contract_id === inv.contract_id).map(t => ({ key: t.term_key, value: t.term_value })),
-          isRepeat: false,
+          clientNotes: client?.notes || '',
+          isRepeat: client?.is_repeat || false,
         }),
       });
 
-      if (!response.ok) throw new Error('Failed to generate email');
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        throw new Error(errorBody.error || `Draft generation failed (${response.status})`);
+      }
       const data = await response.json();
       setDisputeEmail(data);
-    } catch {
-      showToast('Failed to draft dispute', 'error');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not draft the dispute email.', 'error');
     }
     setDraftingDispute(null);
   };
@@ -309,12 +333,56 @@ export function ClientInvoices() {
     );
   };
 
+  const refreshData = async () => {
+    setRefreshing(true);
+    await fetchData();
+    setRefreshing(false);
+  };
+
+  const previewInvoice = async (invoice: Invoice) => {
+    if (!invoice.file_path) {
+      showToast('This invoice was entered manually and has no source file.', 'info');
+      return;
+    }
+    const { data, error: previewError } = await supabase.storage.from('invoices').createSignedUrl(invoice.file_path, 60 * 60);
+    if (previewError || !data?.signedUrl) {
+      showToast('Could not open the invoice preview. Please try again.', 'error');
+      return;
+    }
+    setFileUrl(data.signedUrl);
+    setPreviewInvoiceId(invoice.id);
+  };
+
   if (loading) return <PageLoadingState title="Loading invoices" message="Matching invoices with contract terms..." />;
+
+  const filteredInvoices = invoices
+    .filter((invoice) => {
+      const status = getInvoiceDueStatus(invoice.due_date, invoice.payment_status);
+      if (filter === 'review') return !invoice.confirmed || invoice.extraction_status === 'failed';
+      if (filter === 'overdue') return status === 'overdue' || status === 'due_today';
+      if (filter === 'upcoming') return status === 'upcoming';
+      if (filter === 'paid') return status === 'paid';
+      return true;
+    })
+    .sort((a, b) => {
+      if (sort === 'amount') return b.amount - a.amount;
+      if (sort === 'due_date') return (a.due_date || '9999').localeCompare(b.due_date || '9999');
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  const visibleInvoices = filteredInvoices.slice(0, visibleCount);
 
   return (
     <div className="app-page pb-10">
       <Breadcrumbs items={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Invoices' }]} />
-      <h1 className="font-display text-2xl font-semibold text-cadence-text mb-6">Invoices</h1>
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-display text-2xl font-semibold text-cadence-text">Invoices</h1>
+          {invoices[0] && <p className="mt-1 text-xs text-cadence-muted">Latest update {formatRelativeTime(invoices[0].updated_at)}</p>}
+        </div>
+        <button onClick={refreshData} disabled={refreshing} className="btn-secondary self-start sm:self-auto" title="Refresh invoices">
+          <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} /> Refresh
+        </button>
+      </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] xl:gap-8">
         {/* Left Side: Document Preview */}
@@ -322,7 +390,7 @@ export function ClientInvoices() {
           {fileUrl ? (
             <object data={fileUrl} className="h-[460px] w-full rounded-xl border border-cadence-border bg-cadence-surface sm:h-[600px] lg:h-[720px]" />
           ) : (
-            <div className="flex h-[360px] w-full items-center justify-center rounded-xl border border-dashed border-cadence-border bg-cadence-surface text-sm text-cadence-muted sm:h-[460px] lg:h-[560px]">
+            <div className="flex h-[240px] w-full items-center justify-center rounded-xl border border-dashed border-cadence-border bg-cadence-surface text-sm text-cadence-muted sm:h-[300px]">
               No document selected
             </div>
           )}
@@ -354,25 +422,47 @@ export function ClientInvoices() {
         <button onClick={() => setManualOpen(true)} className="btn-secondary">Enter manually</button>
       </div>
 
-      {error && <ErrorState message={error} onRetry={() => setError('')} />}
+      {dataError && <ErrorState message={`Invoices could not be fully refreshed. ${dataError}`} onRetry={refreshData} />}
+      {error && <ErrorState message={error} onRetry={() => { setError(''); fileInputRef.current?.click(); }} />}
 
       {invoices.length === 0 ? (
         <EmptyState icon={<Receipt className="w-6 h-6" />} title="No invoices yet" description="Upload an invoice (PDF, DOCX, Image) or enter one manually. Cadence will check it against the contract." />
       ) : (
-        <div className="card divide-y divide-cadence-border">
-          {invoices.map((inv) => {
+        <div>
+          <div className="mb-3 flex flex-col gap-3 rounded-xl border border-cadence-border bg-cadence-surface p-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap gap-1.5">
+              {(['all', 'overdue', 'upcoming', 'paid', 'review'] as InvoiceFilter[]).map((item) => (
+                <button key={item} onClick={() => { setFilter(item); setVisibleCount(8); }} className={`rounded-full px-3 py-1.5 text-xs capitalize transition-colors ${filter === item ? 'bg-cadence-accent text-cadence-accentFg' : 'bg-cadence-surface2 text-cadence-secondary hover:text-cadence-text'}`}>
+                  {item === 'review' ? 'Needs review' : item}
+                </button>
+              ))}
+            </div>
+            <label className="flex items-center gap-2 text-xs text-cadence-muted">
+              Sort
+              <select value={sort} onChange={(event) => setSort(event.target.value as InvoiceSort)} className="rounded-lg border border-cadence-border bg-cadence-surface px-2.5 py-1.5 text-xs text-cadence-text">
+                <option value="newest">Newest first</option>
+                <option value="due_date">Due date</option>
+                <option value="amount">Highest amount</option>
+              </select>
+            </label>
+          </div>
+          {filteredInvoices.length === 0 ? (
+            <div className="card p-6 text-center text-sm text-cadence-muted">No invoices match this filter.</div>
+          ) : <div className="card divide-y divide-cadence-border">
+          {visibleInvoices.map((inv) => {
             const status = getInvoiceDueStatus(inv.due_date, inv.payment_status);
             const discrepancies = getDiscrepancies(inv);
             return (
-              <div key={inv.id} className="px-4 py-3 flex items-center gap-4">
+              <div key={inv.id} className={`flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:gap-4 ${previewInvoiceId === inv.id ? 'bg-cadence-accentSoft/60' : ''}`}>
                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
                   status === 'overdue' ? 'bg-cadence-dangerSoft' : status === 'due_today' ? 'bg-cadence-warningSoft' : status === 'paid' ? 'bg-cadence-successSoft' : 'bg-cadence-surface2'
                 }`}>
                   {status === 'overdue' ? <AlertTriangle className="w-5 h-5 text-cadence-danger" /> : status === 'due_today' ? <Clock className="w-5 h-5 text-cadence-warning" /> : <Receipt className="w-5 h-5 text-cadence-muted" />}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-cadence-text">{inv.invoice_number || 'Untitled invoice'}</p>
-                  <p className="text-xs text-cadence-muted">{formatCurrency(inv.amount)} · Due {formatDate(inv.due_date)}</p>
+                  <p className="break-words text-sm font-medium text-cadence-text">{inv.invoice_number || 'Untitled invoice'}</p>
+                  <p className="text-xs text-cadence-muted">{formatCurrency(inv.amount, inv.currency)} · Due {formatDate(inv.due_date)}</p>
+                  <p className="mt-0.5 text-[10px] text-cadence-muted">{inv.contract_id ? 'Matched to contract' : 'No contract linked'} · Updated {formatRelativeTime(inv.updated_at)}</p>
                   {discrepancies.length > 0 && (
                     <div className="mt-1 flex items-start gap-1.5 text-cadence-danger">
                       <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
@@ -380,7 +470,8 @@ export function ClientInvoices() {
                     </div>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                  {inv.file_path && <button onClick={() => previewInvoice(inv)} className="btn-secondary px-2.5 py-1.5 text-xs" title="Preview source invoice"><Eye className="h-3 w-3" /> Preview</button>}
                   {discrepancies.length > 0 && (
                     <button
                       onClick={() => handleDraftDispute(inv, discrepancies)}
@@ -414,6 +505,10 @@ export function ClientInvoices() {
               </div>
             );
           })}
+        </div>}
+        {filteredInvoices.length > visibleCount && (
+          <button onClick={() => setVisibleCount((count) => count + 8)} className="btn-secondary mx-auto mt-4 block">Load more</button>
+        )}
         </div>
       )}
         </div>
@@ -493,6 +588,8 @@ export function ClientInvoices() {
                 onClick={async () => {
                   try {
                     const { data: { session } } = await supabase.auth.getSession();
+                    if (!session?.provider_token) throw new Error('Gmail is not connected. Sign out and reconnect with Google.');
+                    if (!client?.contact_email) throw new Error('Add the client email address before sending.');
                     const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-gmail`, {
                       method: 'POST',
                       headers: {
@@ -500,17 +597,20 @@ export function ClientInvoices() {
                         'Content-Type': 'application/json',
                       },
                       body: JSON.stringify({
-                        to: 'client@example.com',
+                        to: client.contact_email,
                         subject: disputeEmail.subject,
                         body: disputeEmail.body,
                         providerToken: session?.provider_token
                       }),
                     });
-                    if (!res.ok) throw new Error('Failed to send');
+                    if (!res.ok) {
+                      const errorBody = await res.json().catch(() => ({}));
+                      throw new Error(errorBody.error || `Gmail send failed (${res.status})`);
+                    }
                     showToast('Email sent securely via Gmail!', 'success');
                     setDisputeEmail(null);
-                  } catch {
-                    showToast('Failed to send email. Check Gmail scopes.', 'error');
+                  } catch (err) {
+                    showToast(err instanceof Error ? err.message : 'Could not send email.', 'error');
                   }
                 }} 
                 className="bg-cadence-accent text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-opacity-90"

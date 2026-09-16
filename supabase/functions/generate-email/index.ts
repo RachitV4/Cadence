@@ -11,6 +11,8 @@ async function getNimConfig(supabase: ReturnType<typeof createClient>): Promise<
   let apiUrl = Deno.env.get('NVIDIA_NIM_API_URL') || Deno.env.get('NIM_API_URL');
   let model = Deno.env.get('NVIDIA_NIM_MODEL') || Deno.env.get('NIM_MODEL');
 
+  // Deployed function secrets take precedence; the database RPC supports installations
+  // where the owner manages shared NIM credentials in Supabase.
   if (!apiKey) {
     const { data } = await supabase.rpc('get_nim_secrets');
     if (data) {
@@ -65,6 +67,7 @@ const TONE_DESCRIPTIONS: Record<string, string> = {
   modest: 'simple, understated, matter-of-fact — brief and to the point without emotion',
 };
 
+// Keep this server-side mapping aligned with src/lib/toneSimulator.ts.
 const TONE_ANCHORS = [
   { level: 0, key: 'humble', label: 'Humble' },
   { level: 10, key: 'humble', label: 'Gentle' },
@@ -95,7 +98,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json();
-    const { invoiceId, organizationId, clientId, toneLevel, clientName, amount, dueDate, invoiceNumber, advice, explanation, contractTerms, clientNotes, isRepeat, emailThread, existingDraft } = body;
+    const { invoiceId, organizationId, toneLevel, clientName, amount, dueDate, invoiceNumber, advice, explanation, contractTerms, clientNotes, isRepeat, emailThread, existingDraft } = body;
 
     if (!invoiceId || !organizationId) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -122,6 +125,7 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    // Never trust organizationId from the request until membership is verified.
     const { data: member } = await supabase
       .from('organization_members')
       .select('id')
@@ -151,6 +155,8 @@ Deno.serve(async (req: Request) => {
     const toneDesc = TONE_DESCRIPTIONS[toneAnchor.key];
     const originalEmail = typeof existingDraft?.body === 'string' ? existingDraft.body.trim() : '';
     const originalSubject = typeof existingDraft?.subject === 'string' ? existingDraft.subject.trim() : '';
+    // Rewrites are allowed to change phrasing, but omissions of business-critical
+    // facts are returned as warnings for explicit user review.
     const requiredFacts = [
       invoiceNumber ? String(invoiceNumber) : '',
       `$${formattedAmount.toLocaleString()}`,
@@ -170,7 +176,7 @@ You will be provided with:
 - Cadence Analysis & Strategy: ${advice || 'None'}
 - Detailed Reasoning: ${explanation || 'None'}
 - Target Tone: ${toneAnchor.key} - ${toneDesc}
-${emailThread && emailThread.length > 0 ? `- RECENT EMAIL CONTEXT (The client replied recently. YOU MUST RESPOND DIRECTLY TO THEIR LATEST POINTS): \n${emailThread.map((e: any) => `[From ${e.from}]: ${e.snippet}`).join('\n')}` : ''}
+${emailThread && emailThread.length > 0 ? `- RECENT EMAIL CONTEXT (The client replied recently. YOU MUST RESPOND DIRECTLY TO THEIR LATEST POINTS): \n${emailThread.map((email: { from?: string; snippet?: string; body?: string }) => `[From ${email.from || 'Client'}]: ${email.snippet || email.body || ''}`).join('\n')}` : ''}
 - CONTRACT TERMS (Hierarchical Knowledge Graph):
 ${Object.entries(termsMap).map(([k, v]) => `- ${k.replace(/_/g, ' ')}: ${v}`).join('\n') || 'None provided'}
 *(Note: If multiple overlapping terms exist, consider the most recently signed SOW to override the MSA budget/timeline, but overarching legal clauses like Late Fees usually come from the MSA).*
@@ -226,6 +232,8 @@ ${originalEmail}` : ''}`;
       subject = parsed.subject || subject;
       emailBody = parsed.body || '';
     } catch (aiErr) {
+      // Preserve an existing draft on AI failure; for first drafts, return a factual
+      // deterministic message built only from supplied invoice and contract data.
       console.error('AI email generation failed, using fallback:', aiErr.message);
       if (originalEmail) {
         subject = originalSubject || subject;

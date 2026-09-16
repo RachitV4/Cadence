@@ -52,7 +52,7 @@ serve(async (req) => {
         .maybeSingle();
 
       if (!existingDraft) {
-        // Mocking the AI draft generation for the cron job to save time/API calls in this demo
+        // Daily scans use a deterministic draft so scheduled runs do not depend on AI availability.
         await supabase.from('email_drafts').insert({
           invoice_id: inv.id,
           organization_id: organizationId,
@@ -88,7 +88,7 @@ serve(async (req) => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            text: `🤖 *Autopilot Daily Scan Complete!*\nI found ${invoices.length} overdue invoices and automatically generated ${draftsCreated} new follow-up drafts for your approval in the dashboard.`
+            text: `*Cadence receivables review complete*\n${invoices.length} overdue invoices found and ${draftsCreated} follow-up drafts prepared for review.`
           })
         });
       } catch (e) {

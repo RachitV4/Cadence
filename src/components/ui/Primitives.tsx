@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 
 interface StatusBadgeProps {
@@ -147,9 +148,9 @@ export function Breadcrumbs({ items }: { items: { label: string; href?: string }
         <span key={i} className="flex items-center gap-1.5">
           {i > 0 && <span className="text-cadence-border">/</span>}
           {item.href ? (
-            <a href={item.href} className="hover:text-cadence-secondary transition-colors">
+            <Link to={item.href} className="hover:text-cadence-secondary transition-colors">
               {item.label}
-            </a>
+            </Link>
           ) : (
             <span className={i === items.length - 1 ? 'text-cadence-secondary' : ''}>{item.label}</span>
           )}

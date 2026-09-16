@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Terminal, X, Cpu, FileSearch, Send, Zap, CheckCircle2 } from 'lucide-react';
+import { Terminal, X, CheckCircle2 } from 'lucide-react';
 
 interface LogMessage {
   id: string;
@@ -23,25 +23,17 @@ const AGENT_COLORS = {
   Comms: 'text-purple-400',
 };
 
-const AGENT_ICONS = {
-  System: <Cpu className="w-4 h-4" />,
-  Coordinator: <FileSearch className="w-4 h-4" />,
-  Legal: <Zap className="w-4 h-4" />,
-  Comms: <Send className="w-4 h-4" />,
-};
-
-// Realistic simulation steps for the terminal
-const SIMULATION_STEPS = [
-  { delay: 500, agent: 'System', type: 'info', message: 'Initializing Cadence Multi-Agent Autopilot...' },
-  { delay: 1500, agent: 'Coordinator', type: 'info', message: 'Scanning database for overdue invoices across all clients...' },
-  { delay: 3000, agent: 'Coordinator', type: 'action', message: 'Found 3 overdue invoices. Triggering parallel analysis tasks.' },
-  { delay: 4500, agent: 'Legal', type: 'info', message: 'Cross-referencing Invoice INV-2026-041 with Omega Logistics MSA...' },
-  { delay: 6000, agent: 'Legal', type: 'action', message: 'Identified late fee clause (Section 4.2). Penalty applies after 30 days.' },
-  { delay: 7500, agent: 'Legal', type: 'success', message: 'Risk calculated: $4,500 at risk. Escalation recommended.' },
-  { delay: 9000, agent: 'Comms', type: 'info', message: 'Drafting firm but polite follow-up based on legal findings...' },
-  { delay: 10500, agent: 'Comms', type: 'success', message: 'Email draft generated and saved to CRM.' },
-  { delay: 11000, agent: 'System', type: 'action', message: 'Dispatching high-risk notification to Slack #finance channel...' },
-  { delay: 12000, agent: 'System', type: 'success', message: 'Autopilot scan complete. Systems standing by.' },
+const SIMULATION_STEPS: Array<Pick<LogMessage, 'agent' | 'message' | 'type'> & { delay: number }> = [
+  { delay: 500, agent: 'System', type: 'info', message: 'Starting the receivables review...' },
+  { delay: 1500, agent: 'Coordinator', type: 'info', message: 'Checking unpaid and overdue invoices...' },
+  { delay: 3000, agent: 'Coordinator', type: 'action', message: 'Prioritizing invoices that may need attention.' },
+  { delay: 4500, agent: 'Legal', type: 'info', message: 'Comparing invoices with confirmed contract terms...' },
+  { delay: 6000, agent: 'Legal', type: 'action', message: 'Reviewing payment terms, late fees, and client history.' },
+  { delay: 7500, agent: 'Legal', type: 'success', message: 'Risk review completed.' },
+  { delay: 9000, agent: 'Comms', type: 'info', message: 'Preparing appropriate follow-up drafts...' },
+  { delay: 10500, agent: 'Comms', type: 'success', message: 'Draft recommendations are ready for review.' },
+  { delay: 11000, agent: 'System', type: 'action', message: 'Sending configured team notifications...' },
+  { delay: 12000, agent: 'System', type: 'success', message: 'Receivables review complete.' },
 ];
 
 export function AutopilotTerminal({ isOpen, onClose, isSimulating = false }: AutopilotTerminalProps) {
@@ -54,16 +46,18 @@ export function AutopilotTerminal({ isOpen, onClose, isSimulating = false }: Aut
       let isCancelled = false;
 
       const runSimulation = async () => {
+        let previousDelay = 0;
         for (const step of SIMULATION_STEPS) {
           if (isCancelled) break;
-          await new Promise(resolve => setTimeout(resolve, step.delay - (logs.length > 0 ? SIMULATION_STEPS[logs.length - 1]?.delay || 0 : 0)));
+          await new Promise(resolve => setTimeout(resolve, step.delay - previousDelay));
+          previousDelay = step.delay;
           if (isCancelled) break;
           
           setLogs(prev => [...prev, {
-            id: Math.random().toString(36).substr(2, 9),
-            agent: step.agent as any,
+            id: crypto.randomUUID(),
+            agent: step.agent,
             message: step.message,
-            type: step.type as any,
+            type: step.type,
             timestamp: Date.now()
           }]);
         }
