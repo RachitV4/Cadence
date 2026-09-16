@@ -544,7 +544,7 @@ export function Dashboard() {
                   return (
                     <Link
                       key={`finding-${finding.id}`}
-                      to={`/dashboard/contract/${finding.contract_id}`}
+                      to={`/dashboard/client/${finding.contract!.client_id}/contracts?contract=${finding.contract_id}#findings`}
                       className="card p-4 flex items-start gap-4 hover:border-cadence-warning/50 transition-colors bg-cadence-warningSoft/10"
                     >
                       <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 bg-cadence-warningSoft">

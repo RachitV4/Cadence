@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -16,6 +16,8 @@ type ContractSort = 'newest' | 'oldest' | 'name';
 
 export function ClientContracts() {
   const { clientId } = useParams();
+  const [searchParams] = useSearchParams();
+  const requestedContractId = searchParams.get('contract');
   const { organization } = useAuth();
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -66,7 +68,9 @@ export function ClientContracts() {
     setContracts(contractList);
     if (contractList.length > 0) {
       // Preserve the user's selection across refreshes; otherwise select the newest.
-      const selected = contractList.find((contract) => contract.id === activeContractId) || contractList[0];
+      const selected = contractList.find((contract) => contract.id === activeContractId)
+        || contractList.find((contract) => contract.id === requestedContractId)
+        || contractList[0];
       if (selected.id !== activeContractId) setActiveContractId(selected.id);
       const [termsRes, findingsRes, pagesRes] = await Promise.all([
         supabase.from('contract_terms').select('*').eq('contract_id', selected.id),
@@ -86,7 +90,7 @@ export function ClientContracts() {
       setFileUrl(null);
     }
     setLoading(false);
-  }, [activeContractId, clientId, organization]);
+  }, [activeContractId, clientId, organization, requestedContractId]);
 
   useEffect(() => {
     fetchData();
@@ -110,6 +114,15 @@ export function ClientContracts() {
     setActivePage(1);
     setSourceText('');
   }, [activeContract?.id]);
+
+  useEffect(() => {
+    if (window.location.hash !== '#findings' || !activeContract || findings.length === 0) return;
+    // Findings load after the route, so scroll only once their section exists.
+    setFindingsExpanded(true);
+    window.requestAnimationFrame(() => {
+      document.getElementById('findings')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, [activeContract, findings.length]);
 
   const showSource = (page: number | null, text: string) => {
     // Clear first so clicking the same clause twice replays the three-second highlight.
@@ -800,7 +813,7 @@ export function ClientContracts() {
 
               {/* Findings */}
               {contract.id === activeContract?.id && contract.status === 'complete' && findings.filter((f) => !f.dismissed).length > 0 && (
-                <div className="mt-6">
+                <div id="findings" className="mt-6 scroll-mt-6">
                   <button onClick={() => setFindingsExpanded((expanded) => !expanded)} className="mb-3 flex w-full items-center justify-between text-left">
                     <h3 className="text-xs font-mono uppercase tracking-wider text-cadence-muted">Worth a second look ({findings.filter((finding) => !finding.dismissed).length})</h3>
                     <ChevronDown className={`h-4 w-4 text-cadence-muted transition-transform ${findingsExpanded ? 'rotate-180' : ''}`} />
